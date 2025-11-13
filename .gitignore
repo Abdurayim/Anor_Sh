@@ -44,3 +44,9 @@ Thumbs.db
 # Binary
 parent-bot
 cmd/bot/bot
+
+# Database files (should not be committed)
+*.db
+*.db-shm
+*.db-wal
+parent_bot.db*

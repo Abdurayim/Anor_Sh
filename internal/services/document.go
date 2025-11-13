@@ -69,6 +69,54 @@ func (s *DocumentService) GenerateComplaintDocument(user *models.User, complaint
 	return filePath, filename, nil
 }
 
+// GenerateProposalDocument generates a DOCX document for a proposal
+// Returns the file path and filename
+func (s *DocumentService) GenerateProposalDocument(user *models.User, proposalText string) (filePath, filename string, err error) {
+	// Generate filename (similar to complaint, but with "proposal" prefix)
+	filename = utils.GenerateProposalFilename(user.ChildName, user.ChildClass)
+
+	// Create full path
+	filePath = filepath.Join(s.tempDir, filename)
+
+	// Prepare document data (reusing ComplaintData structure with different title)
+	data := &docx.ComplaintData{
+		ChildName:     user.ChildName,
+		ChildClass:    user.ChildClass,
+		PhoneNumber:   user.PhoneNumber,
+		ComplaintText: proposalText, // Using same field for proposal text
+		ParentName:    user.ChildName,
+		Date:          time.Now(),
+	}
+
+	// Validate data
+	if err := docx.ValidateData(data); err != nil {
+		return "", "", fmt.Errorf("invalid proposal data: %w", err)
+	}
+
+	// Generate document with proposal flag
+	if err := docx.GenerateProposal(data, filePath); err != nil {
+		return "", "", fmt.Errorf("failed to generate document: %w", err)
+	}
+
+	// Verify file was created and has content
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to verify generated file: %w", err)
+	}
+
+	if fileInfo.Size() == 0 {
+		return "", "", fmt.Errorf("generated file is empty")
+	}
+
+	if fileInfo.Size() < 1000 {
+		return "", "", fmt.Errorf("generated file is too small (%d bytes), might be corrupted", fileInfo.Size())
+	}
+
+	fmt.Printf("[DEBUG] Document verified: %s, size: %d bytes\n", filename, fileInfo.Size())
+
+	return filePath, filename, nil
+}
+
 // DeleteTempFile deletes a temporary file
 func (s *DocumentService) DeleteTempFile(filePath string) error {
 	if err := os.Remove(filePath); err != nil {

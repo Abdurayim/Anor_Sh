@@ -12,8 +12,8 @@ import (
 	"parent-bot/internal/validator"
 )
 
-// HandleComplaintCommand initiates complaint submission
-func HandleComplaintCommand(botService *services.BotService, message *tgbotapi.Message) error {
+// HandleProposalCommand initiates proposal submission
+func HandleProposalCommand(botService *services.BotService, message *tgbotapi.Message) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
 
@@ -31,22 +31,22 @@ func HandleComplaintCommand(botService *services.BotService, message *tgbotapi.M
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Set state to awaiting complaint
+	// Set state to awaiting proposal
 	stateData := &models.StateData{
 		Language: user.Language,
 	}
-	err = botService.StateManager.Set(telegramID, models.StateAwaitingComplaint, stateData)
+	err = botService.StateManager.Set(telegramID, models.StateAwaitingProposal, stateData)
 	if err != nil {
 		return err
 	}
 
 	// Send request message
-	text := i18n.Get(i18n.MsgRequestComplaint, lang)
+	text := i18n.Get(i18n.MsgRequestProposal, lang)
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }
 
-// HandleComplaintText handles complaint text input
-func HandleComplaintText(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
+// HandleProposalText handles proposal text input
+func HandleProposalText(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
 	lang := i18n.GetLanguage(stateData.Language)
@@ -78,7 +78,7 @@ func HandleComplaintText(botService *services.BotService, message *tgbotapi.Mess
 		} else if message.Voice != nil {
 			errorMsg = "❌ Iltimos, ovozli xabar emas, matn yuboring!\n\n❌ Пожалуйста, отправьте текст, а не голосовое сообщение!"
 		} else {
-			errorMsg = "❌ Iltimos, shikoyat matnini yuboring!\n\n❌ Пожалуйста, отправьте текст жалобы!"
+			errorMsg = "❌ Iltimos, taklif matnini yuboring!\n\n❌ Пожалуйста, отправьте текст предложения!"
 		}
 
 		// Keep the main menu keyboard visible
@@ -86,31 +86,31 @@ func HandleComplaintText(botService *services.BotService, message *tgbotapi.Mess
 		return botService.TelegramService.SendMessage(chatID, errorMsg, &keyboard)
 	}
 
-	// Validate complaint text
-	complaintText, err := validator.ValidateComplaintText(message.Text)
+	// Validate proposal text (using same validator as complaint)
+	proposalText, err := validator.ValidateComplaintText(message.Text)
 	if err != nil {
-		text := i18n.Get(i18n.ErrInvalidComplaint, lang) + "\n\n" + err.Error()
+		text := i18n.Get(i18n.ErrInvalidProposal, lang) + "\n\n" + err.Error()
 		// Keep the main menu keyboard visible on validation errors too
 		keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
 		return botService.TelegramService.SendMessage(chatID, text, &keyboard)
 	}
 
-	// Save complaint text in state
-	stateData.ComplaintText = complaintText
-	err = botService.StateManager.Set(telegramID, models.StateConfirmingComplaint, stateData)
+	// Save proposal text in state
+	stateData.ProposalText = proposalText
+	err = botService.StateManager.Set(telegramID, models.StateConfirmingProposal, stateData)
 	if err != nil {
 		return err
 	}
 
 	// Show preview and confirmation
-	text := fmt.Sprintf(i18n.Get(i18n.MsgConfirmComplaint, lang), complaintText)
-	keyboard := utils.MakeConfirmationKeyboard(lang)
+	text := fmt.Sprintf(i18n.Get(i18n.MsgConfirmProposal, lang), proposalText)
+	keyboard := utils.MakeProposalConfirmationKeyboard(lang)
 
-	return botService.TelegramService.SendMessage(chatID, text, keyboard)
+	return botService.TelegramService.SendMessage(chatID, text, &keyboard)
 }
 
-// HandleComplaintConfirmation handles complaint confirmation
-func HandleComplaintConfirmation(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+// HandleProposalConfirmation handles proposal confirmation
+func HandleProposalConfirmation(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	telegramID := callback.From.ID
 	chatID := callback.Message.Chat.ID
 
@@ -126,21 +126,21 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get complaint text from state
+	// Get proposal text from state
 	stateData, err := botService.StateManager.GetData(telegramID)
 	if err != nil {
 		return err
 	}
 
-	if stateData.ComplaintText == "" {
-		return botService.TelegramService.AnswerCallbackQuery(callback.ID, "Complaint text not found")
+	if stateData.ProposalText == "" {
+		return botService.TelegramService.AnswerCallbackQuery(callback.ID, "Proposal text not found")
 	}
 
 	// Answer callback query
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅")
 
 	// Generate DOCX document
-	docPath, filename, err := botService.DocumentService.GenerateComplaintDocument(user, stateData.ComplaintText)
+	docPath, filename, err := botService.DocumentService.GenerateProposalDocument(user, stateData.ProposalText)
 	if err != nil {
 		log.Printf("Failed to generate document: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
@@ -160,17 +160,17 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	// Clean up temp file after upload
 	_ = botService.DocumentService.DeleteTempFile(docPath)
 
-	// Save complaint to database with document info
-	complaintReq := &models.CreateComplaintRequest{
+	// Save proposal to database with document info
+	proposalReq := &models.CreateProposalRequest{
 		UserID:         user.ID,
-		ComplaintText:  stateData.ComplaintText,
+		ProposalText:   stateData.ProposalText,
 		TelegramFileID: fileID,
 		Filename:       filename,
 	}
 
-	complaint, err := botService.ComplaintService.CreateComplaint(complaintReq)
+	proposal, err := botService.ProposalService.CreateProposal(proposalReq)
 	if err != nil {
-		log.Printf("Failed to save complaint: %v", err)
+		log.Printf("Failed to save proposal: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
@@ -179,18 +179,18 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	_ = botService.StateManager.Clear(telegramID)
 
 	// Send success message
-	text := i18n.Get(i18n.MsgComplaintSubmitted, lang)
+	text := i18n.Get(i18n.MsgProposalSubmitted, lang)
 	keyboard := utils.MakeMainMenuKeyboard(lang)
 	_ = botService.TelegramService.SendMessage(chatID, text, keyboard)
 
 	// Notify admins with DOCX document
-	go notifyAdminsWithDocument(botService, user, complaint, fileID)
+	go notifyAdminsWithProposalDocument(botService, user, proposal, fileID)
 
 	return nil
 }
 
-// HandleComplaintCancellation handles complaint cancellation
-func HandleComplaintCancellation(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+// HandleProposalCancellation handles proposal cancellation
+func HandleProposalCancellation(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	telegramID := callback.From.ID
 	chatID := callback.Message.Chat.ID
 
@@ -210,17 +210,17 @@ func HandleComplaintCancellation(botService *services.BotService, callback *tgbo
 	_ = botService.StateManager.Clear(telegramID)
 
 	// Answer callback query
-	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, i18n.Get(i18n.MsgComplaintCancelled, lang))
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, i18n.Get(i18n.MsgProposalCancelled, lang))
 
 	// Send cancellation message
-	text := i18n.Get(i18n.MsgComplaintCancelled, lang)
+	text := i18n.Get(i18n.MsgProposalCancelled, lang)
 	keyboard := utils.MakeMainMenuKeyboard(lang)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
-// notifyAdminsWithDocument sends complaint as DOCX document to all admins
-func notifyAdminsWithDocument(botService *services.BotService, user *models.User, complaint *models.Complaint, fileID string) {
+// notifyAdminsWithProposalDocument sends proposal as DOCX document to all admins
+func notifyAdminsWithProposalDocument(botService *services.BotService, user *models.User, proposal *models.Proposal, fileID string) {
 	// Get admin telegram IDs
 	adminIDs, err := botService.GetAdminTelegramIDs()
 	if err != nil {
@@ -240,21 +240,21 @@ func notifyAdminsWithDocument(botService *services.BotService, user *models.User
 	}
 
 	caption := fmt.Sprintf(
-		"<b>YANGI SHIKOYAT / НОВАЯ ЖАЛОБА</b>\n\n"+
+		"<b>YANGI TAKLIF / НОВОЕ ПРЕДЛОЖЕНИЕ</b>\n\n"+
 			"ID: #%d\n"+
 			"Farzand / Ребенок: <b>%s</b>\n"+
 			"Sinf / Класс: <b>%s</b>\n"+
 			"Telefon / Телефон: %s\n"+
 			"Username: @%s\n"+
 			"Sana / Дата: %s\n\n"+
-			"Shikoyat hujjat sifatida yuqorida\n"+
-			"Жалоба в формате документа выше",
-		complaint.ID,
+			"Taklif hujjat sifatida yuqorida\n"+
+			"Предложение в формате документа выше",
+		proposal.ID,
 		user.ChildName,
 		user.ChildClass,
 		user.PhoneNumber,
 		username,
-		utils.FormatDateTime(complaint.CreatedAt),
+		utils.FormatDateTime(proposal.CreatedAt),
 	)
 
 	// Send document to all admins
@@ -264,8 +264,8 @@ func notifyAdminsWithDocument(botService *services.BotService, user *models.User
 	}
 }
 
-// HandleMyComplaintsCommand shows user's complaint history
-func HandleMyComplaintsCommand(botService *services.BotService, message *tgbotapi.Message) error {
+// HandleMyProposalsCommand shows user's proposal history
+func HandleMyProposalsCommand(botService *services.BotService, message *tgbotapi.Message) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
 
@@ -283,64 +283,34 @@ func HandleMyComplaintsCommand(botService *services.BotService, message *tgbotap
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get user complaints
-	complaints, err := botService.ComplaintService.GetUserComplaints(user.ID, 10, 0)
+	// Get user proposals
+	proposals, err := botService.ProposalService.GetUserProposals(user.ID, 10, 0)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	if len(complaints) == 0 {
-		text := "Sizda hali shikoyatlar yo'q / У вас пока нет жалоб"
+	if len(proposals) == 0 {
+		text := "Sizda hali takliflar yo'q / У вас пока нет предложений"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// Format complaints list
-	text := "📋 Sizning shikoyatlaringiz / Ваши жалобы:\n\n"
-	for i, c := range complaints {
+	// Format proposals list
+	text := "💡 Sizning takliflaringiz / Ваши предложения:\n\n"
+	for i, p := range proposals {
 		status := "⏳"
-		if c.Status == models.StatusReviewed {
+		if p.Status == models.StatusReviewed {
 			status = "✅"
 		}
 
-		preview := utils.TruncateText(c.ComplaintText, 50)
+		preview := utils.TruncateText(p.ProposalText, 50)
 		text += fmt.Sprintf("%d. %s %s\n   📅 %s\n\n",
 			i+1,
 			status,
 			preview,
-			utils.FormatDateTime(c.CreatedAt),
+			utils.FormatDateTime(p.CreatedAt),
 		)
 	}
-
-	return botService.TelegramService.SendMessage(chatID, text, nil)
-}
-
-// HandleSettingsCommand shows settings menu
-func HandleSettingsCommand(botService *services.BotService, message *tgbotapi.Message) error {
-	telegramID := message.From.ID
-	chatID := message.Chat.ID
-
-	// Get user
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	if user == nil {
-		lang := i18n.LanguageUzbek
-		text := i18n.Get(i18n.ErrNotRegistered, lang)
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	lang := i18n.GetLanguage(user.Language)
-	_ = lang // Will be used in future for localized settings
-
-	// Format user info
-	text := "⚙️ Sozlamalar / Настройки\n\n"
-	text += fmt.Sprintf("👤 Farzand / Ребенок: %s\n", user.ChildName)
-	text += fmt.Sprintf("🎓 Sinf / Класс: %s\n", user.ChildClass)
-	text += fmt.Sprintf("📱 Telefon / Телефон: %s\n", utils.FormatPhoneNumber(user.PhoneNumber))
-	text += fmt.Sprintf("🌍 Til / Язык: %s\n", user.Language)
 
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }

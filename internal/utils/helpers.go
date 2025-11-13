@@ -23,10 +23,40 @@ func GenerateComplaintFilename(childName, childClass string) string {
 	return filename
 }
 
+// GenerateProposalFilename generates a filename for proposal document
+// Format: Taklif_ParentName_ClassName_Date.docx
+func GenerateProposalFilename(childName, childClass string) string {
+	date := time.Now().Format("2006-01-02")
+
+	// Sanitize name
+	safeName := validator.SanitizeFilename(childName)
+	safeName = strings.ReplaceAll(safeName, " ", "_")
+
+	// Create filename
+	filename := fmt.Sprintf("Taklif_%s_%s_sinf_%s.docx", safeName, childClass, date)
+
+	return filename
+}
+
 // GenerateComplaintCaption generates caption for complaint document
 func GenerateComplaintCaption(childName, childClass, phoneNumber string) string {
 	return fmt.Sprintf(
 		"YANGI SHIKOYAT / НОВАЯ ЖАЛОБА\n\n"+
+			"Ota-ona / Родитель: %s\n"+
+			"Sinf / Класс: %s\n"+
+			"Telefon / Телефон: %s\n"+
+			"Sana / Дата: %s",
+		childName,
+		childClass,
+		phoneNumber,
+		time.Now().Format("02.01.2006 15:04"),
+	)
+}
+
+// GenerateProposalCaption generates caption for proposal document
+func GenerateProposalCaption(childName, childClass, phoneNumber string) string {
+	return fmt.Sprintf(
+		"YANGI TAKLIF / НОВОЕ ПРЕДЛОЖЕНИЕ\n\n"+
 			"Ota-ona / Родитель: %s\n"+
 			"Sinf / Класс: %s\n"+
 			"Telefon / Телефон: %s\n"+

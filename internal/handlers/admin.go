@@ -418,28 +418,13 @@ func HandleAdminManageClassesCallback(botService *services.BotService, callback 
 	} else {
 		text += "Jami / Всего: " + fmt.Sprintf("%d", len(classes)) + "\n\n"
 
-		activeCount := 0
-		for _, class := range classes {
-			if class.IsActive {
-				activeCount++
-			}
-		}
-		text += fmt.Sprintf("✅ Faol / Активных: %d\n", activeCount)
-		text += fmt.Sprintf("❌ Faol emas / Неактивных: %d\n\n", len(classes)-activeCount)
-
 		text += "<b>Sinflar ro'yxati / Список классов:</b>\n\n"
 
 		for i, class := range classes {
-			status := "✅"
-			statusText := "faol / активен"
-			if !class.IsActive {
-				status = "❌"
-				statusText = "faol emas / неактивен"
-			}
-			text += fmt.Sprintf("%d. %s <b>%s</b> - %s\n", i+1, status, class.ClassName, statusText)
+			text += fmt.Sprintf("%d. <b>%s</b>\n", i+1, class.ClassName)
 		}
 
-		text += "\n👇 Sinf ustiga bosing:"
+		text += "\n👇 O'chirish uchun sinfni tanlang / Выберите класс для удаления:"
 	}
 
 	// Create keyboard with class management options
@@ -452,35 +437,23 @@ func HandleAdminManageClassesCallback(botService *services.BotService, callback 
 func makeClassManagementKeyboard(classes []*models.Class, lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	// Add class buttons (max 2 per row)
-	for i := 0; i < len(classes); i += 2 {
+	// Add each class with separate name and delete buttons
+	for _, class := range classes {
 		var row []tgbotapi.InlineKeyboardButton
 
-		// First class in row
-		class := classes[i]
-		emoji := "✅"
-		if !class.IsActive {
-			emoji = "❌"
-		}
-		button := tgbotapi.NewInlineKeyboardButtonData(
-			fmt.Sprintf("%s %s", emoji, class.ClassName),
-			fmt.Sprintf("class_toggle_%s", class.ClassName),
+		// Class name button (non-clickable, just for display)
+		nameBtn := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("📚 %s", class.ClassName),
+			fmt.Sprintf("class_info_%s", class.ClassName),
 		)
-		row = append(row, button)
+		row = append(row, nameBtn)
 
-		// Second class in row (if exists)
-		if i+1 < len(classes) {
-			class := classes[i+1]
-			emoji := "✅"
-			if !class.IsActive {
-				emoji = "❌"
-			}
-			button := tgbotapi.NewInlineKeyboardButtonData(
-				fmt.Sprintf("%s %s", emoji, class.ClassName),
-				fmt.Sprintf("class_toggle_%s", class.ClassName),
-			)
-			row = append(row, button)
-		}
+		// Delete button (separate)
+		deleteBtn := tgbotapi.NewInlineKeyboardButtonData(
+			"🗑 O'chirish / Удалить",
+			fmt.Sprintf("class_delete_%s", class.ClassName),
+		)
+		row = append(row, deleteBtn)
 
 		rows = append(rows, row)
 	}
@@ -580,16 +553,54 @@ func HandleClassDeleteCallback(botService *services.BotService, callback *tgbota
 	// Delete class
 	err = botService.ClassRepo.Delete(className)
 	if err != nil {
-		text := "❌ Xatolik / Ошибка"
+		text := fmt.Sprintf("❌ Xatolik / Ошибка: %v", err)
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
-		return nil
+		return err
 	}
 
 	// Answer callback with success
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅ Sinf o'chirildi / Класс удален")
 
-	// Refresh the class management view
-	return HandleAdminManageClassesCallback(botService, callback)
+	// Refresh the class management view by editing the current message
+	lang := i18n.LanguageUzbek
+	if user != nil {
+		lang = i18n.GetLanguage(user.Language)
+	}
+
+	// Get updated list of classes
+	classes, err := botService.ClassRepo.GetAll()
+	if err != nil {
+		return err
+	}
+
+	// Format updated message
+	text := "📚 <b>Sinflarni boshqarish / Управление классами</b>\n\n"
+
+	if len(classes) == 0 {
+		text += "Hozircha sinflar yo'q / Пока нет классов\n\n"
+		text += "Yangi sinf yaratish uchun quyidagi tugmani bosing:"
+	} else {
+		text += "Jami / Всего: " + fmt.Sprintf("%d", len(classes)) + "\n\n"
+
+		text += "<b>Sinflar ro'yxati / Список классов:</b>\n\n"
+
+		for i, class := range classes {
+			text += fmt.Sprintf("%d. <b>%s</b>\n", i+1, class.ClassName)
+		}
+
+		text += "\n👇 O'chirish uchun sinfni tanlang / Выберите класс для удаления:"
+	}
+
+	// Create updated keyboard
+	keyboard := makeClassManagementKeyboard(classes, lang)
+
+	// Edit the message
+	return botService.TelegramService.EditMessage(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		text,
+		&keyboard,
+	)
 }
 
 // HandleAdminCreateClassCallback handles admin create class callback
@@ -774,4 +785,269 @@ func HandleAdminBackCallback(botService *services.BotService, callback *tgbotapi
 	keyboard := utils.MakeAdminKeyboard(lang)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
+}
+
+// HandleAdminUploadTimetableCallback handles admin upload timetable callback
+func HandleAdminUploadTimetableCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	// Answer callback
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	// Convert callback to message for HandleUploadTimetableCommand
+	message := &tgbotapi.Message{
+		From: callback.From,
+		Chat: &tgbotapi.Chat{
+			ID: callback.Message.Chat.ID,
+		},
+	}
+
+	return HandleUploadTimetableCommand(botService, message)
+}
+
+// HandleAdminPostAnnouncementCallback handles admin post announcement callback
+func HandleAdminPostAnnouncementCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	// Answer callback
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	// Convert callback to message for HandlePostAnnouncementCommand
+	message := &tgbotapi.Message{
+		From: callback.From,
+		Chat: &tgbotapi.Chat{
+			ID: callback.Message.Chat.ID,
+		},
+	}
+
+	return HandlePostAnnouncementCommand(botService, message)
+}
+
+// HandleAdminProposalsCallback handles admin proposals list callback
+func HandleAdminProposalsCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	chatID := callback.Message.Chat.ID
+
+	// Get proposals with user info
+	proposals, err := botService.ProposalService.GetAllProposals(10, 0)
+	if err != nil {
+		text := "Xatolik / Ошибка: " + err.Error()
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Count total proposals
+	totalCount, _ := botService.ProposalService.CountProposals()
+
+	// Format proposals list
+	text := fmt.Sprintf("💡 Takliflar / Предложения\n\n")
+	text += fmt.Sprintf("Jami / Всего: %d\n\n", totalCount)
+
+	for i, p := range proposals {
+		statusEmoji := "⏳"
+		statusText := "Kutilmoqda / Ожидание"
+
+		if p.Status == models.StatusReviewed {
+			statusEmoji = "✅"
+			statusText = "Ko'rib chiqildi / Рассмотрено"
+		} else if p.Status == models.StatusArchived {
+			statusEmoji = "📦"
+			statusText = "Arxivlangan / Архивировано"
+		}
+
+		// Get user info
+		user, _ := botService.UserService.GetUserByID(p.UserID)
+		userName := "N/A"
+		userClass := "N/A"
+		if user != nil {
+			userName = user.ChildName
+			userClass = user.ChildClass
+		}
+
+		text += fmt.Sprintf("%d. %s #%d - %s %s\n", i+1, statusEmoji, p.ID, userName, userClass)
+		preview := utils.TruncateText(p.ProposalText, 60)
+		text += fmt.Sprintf("   💡 %s\n", preview)
+		text += fmt.Sprintf("   📅 %s\n", utils.FormatDateTime(p.CreatedAt))
+		text += fmt.Sprintf("   📊 %s\n\n", statusText)
+	}
+
+	if len(proposals) < totalCount {
+		text += fmt.Sprintf("...va yana %d ta / ...и ещё %d", totalCount-len(proposals), totalCount-len(proposals))
+	}
+
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+	return botService.TelegramService.SendMessage(chatID, text, nil)
+}
+
+// HandleAdminViewTimetablesCallback handles admin view timetables callback
+func HandleAdminViewTimetablesCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	// Get user
+	user, err := botService.UserService.GetUserByTelegramID(telegramID)
+	if err != nil {
+		return err
+	}
+
+	// Check if user is admin
+	phoneNumber := ""
+	if user != nil {
+		phoneNumber = user.PhoneNumber
+	}
+
+	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
+	if err != nil {
+		return err
+	}
+
+	if !isAdmin {
+		text := "❌ Bu buyruq faqat ma'murlar uchun / Эта команда только для администраторов"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
+		return nil
+	}
+
+	lang := i18n.LanguageUzbek
+	if user != nil {
+		lang = i18n.GetLanguage(user.Language)
+	}
+
+	// Get all timetables
+	timetables, err := botService.TimetableRepo.GetAll(50, 0)
+	if err != nil {
+		text := "❌ Xatolik / Ошибка: " + err.Error()
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get all classes for mapping
+	classes, err := botService.ClassRepo.GetAll()
+	if err != nil {
+		text := "❌ Xatolik / Ошибка: " + err.Error()
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Create class ID to name map
+	classMap := make(map[int]string)
+	for _, class := range classes {
+		classMap[class.ID] = class.ClassName
+	}
+
+	// Answer callback
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	// Format timetables list
+	text := "📅 <b>Dars jadvallari / Расписания уроков</b>\n\n"
+
+	if len(timetables) == 0 {
+		text += "Hozircha dars jadvallari yo'q / Пока нет расписаний\n\n"
+		text += "Yangi dars jadvali yuklash uchun quyidagi tugmani bosing:"
+	} else {
+		text += fmt.Sprintf("Jami / Всего: %d\n\n", len(timetables))
+
+		for i, timetable := range timetables {
+			className := classMap[timetable.ClassID]
+			if className == "" {
+				className = fmt.Sprintf("ID:%d", timetable.ClassID)
+			}
+
+			text += fmt.Sprintf("%d. 📚 <b>%s</b>\n", i+1, className)
+			text += fmt.Sprintf("   📄 %s\n", timetable.Filename)
+			text += fmt.Sprintf("   📅 %s\n", utils.FormatDateTime(timetable.CreatedAt))
+			text += fmt.Sprintf("   🆔 ID: %d\n\n", timetable.ID)
+		}
+
+		text += "\n👇 Dars jadvalini o'chirish uchun ID raqamini tanlang:"
+	}
+
+	// Create keyboard with timetable management options
+	keyboard := makeTimetableManagementKeyboard(timetables, classMap, lang)
+
+	return botService.TelegramService.SendMessage(chatID, text, keyboard)
+}
+
+// makeTimetableManagementKeyboard creates keyboard for timetable management
+func makeTimetableManagementKeyboard(timetables []*models.Timetable, classMap map[int]string, lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Add timetable buttons with delete options (2 per row)
+	for i := 0; i < len(timetables); i += 2 {
+		var row []tgbotapi.InlineKeyboardButton
+
+		// First timetable in row
+		timetable := timetables[i]
+		className := classMap[timetable.ClassID]
+		if className == "" {
+			className = fmt.Sprintf("ID:%d", timetable.ClassID)
+		}
+		deleteBtn := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("🗑 %s (ID:%d)", className, timetable.ID),
+			fmt.Sprintf("timetable_delete_%d", timetable.ID),
+		)
+		row = append(row, deleteBtn)
+
+		// Second timetable in row (if exists)
+		if i+1 < len(timetables) {
+			timetable := timetables[i+1]
+			className := classMap[timetable.ClassID]
+			if className == "" {
+				className = fmt.Sprintf("ID:%d", timetable.ClassID)
+			}
+			deleteBtn := tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("🗑 %s (ID:%d)", className, timetable.ID),
+				fmt.Sprintf("timetable_delete_%d", timetable.ID),
+			)
+			row = append(row, deleteBtn)
+		}
+
+		rows = append(rows, row)
+	}
+
+	// Add back button
+	backBtn := tgbotapi.NewInlineKeyboardButtonData(
+		i18n.Get(i18n.BtnBack, lang),
+		"admin_back",
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{backBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// HandleTimetableDeleteCallback handles deleting a timetable
+func HandleTimetableDeleteCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	telegramID := callback.From.ID
+
+	// Get user
+	user, err := botService.UserService.GetUserByTelegramID(telegramID)
+	if err != nil {
+		return err
+	}
+
+	// Check if user is admin
+	phoneNumber := ""
+	if user != nil {
+		phoneNumber = user.PhoneNumber
+	}
+
+	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
+	if err != nil {
+		return err
+	}
+
+	if !isAdmin {
+		text := "❌ Faqat ma'murlar uchun / Только для администраторов"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
+		return nil
+	}
+
+	// Extract timetable ID from callback data
+	var timetableID int
+	fmt.Sscanf(callback.Data, "timetable_delete_%d", &timetableID)
+
+	// Delete timetable
+	err = botService.TimetableRepo.Delete(timetableID)
+	if err != nil {
+		text := "❌ Xatolik / Ошибка"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
+		return nil
+	}
+
+	// Answer callback with success
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅ Dars jadvali o'chirildi / Расписание удалено")
+
+	// Refresh the timetable management view
+	return HandleAdminViewTimetablesCallback(botService, callback)
 }

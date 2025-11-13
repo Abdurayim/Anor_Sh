@@ -33,22 +33,34 @@ func MakePhoneKeyboard(lang i18n.Language) tgbotapi.ReplyKeyboardMarkup {
 
 // MakeMainMenuKeyboard creates main menu keyboard
 func MakeMainMenuKeyboard(lang i18n.Language) tgbotapi.ReplyKeyboardMarkup {
-	return tgbotapi.NewReplyKeyboard(
+	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnSubmitComplaint, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnSubmitProposal, lang)),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewTimetable, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewAnnouncements, lang)),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnMyComplaints, lang)),
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnSettings, lang)),
 		),
 	)
+	keyboard.ResizeKeyboard = true
+	return keyboard
 }
 
 // MakeMainMenuKeyboardWithAdmin creates main menu keyboard with admin button
 func MakeMainMenuKeyboardWithAdmin(lang i18n.Language) tgbotapi.ReplyKeyboardMarkup {
-	return tgbotapi.NewReplyKeyboard(
+	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnSubmitComplaint, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnSubmitProposal, lang)),
+		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewTimetable, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewAnnouncements, lang)),
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnMyComplaints, lang)),
@@ -58,6 +70,8 @@ func MakeMainMenuKeyboardWithAdmin(lang i18n.Language) tgbotapi.ReplyKeyboardMar
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnAdminPanel, lang)),
 		),
 	)
+	keyboard.ResizeKeyboard = true
+	return keyboard
 }
 
 // MakeMainMenuKeyboardForUser creates main menu keyboard based on user's admin status
@@ -68,7 +82,7 @@ func MakeMainMenuKeyboardForUser(lang i18n.Language, isAdmin bool) tgbotapi.Repl
 	return MakeMainMenuKeyboard(lang)
 }
 
-// MakeConfirmationKeyboard creates confirmation keyboard
+// MakeConfirmationKeyboard creates confirmation keyboard for complaints
 func MakeConfirmationKeyboard(lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -79,6 +93,22 @@ func MakeConfirmationKeyboard(lang i18n.Language) tgbotapi.InlineKeyboardMarkup 
 			tgbotapi.NewInlineKeyboardButtonData(
 				i18n.Get(i18n.BtnCancel, lang),
 				"cancel_complaint",
+			),
+		),
+	)
+}
+
+// MakeProposalConfirmationKeyboard creates confirmation keyboard for proposals
+func MakeProposalConfirmationKeyboard(lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnConfirm, lang),
+				"confirm_proposal",
+			),
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnCancel, lang),
+				"cancel_proposal",
 			),
 		),
 	)
@@ -95,6 +125,30 @@ func MakeAdminKeyboard(lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnUploadTimetable, lang),
+				"admin_upload_timetable",
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnViewTimetables, lang),
+				"admin_view_timetables",
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnPostAnnouncement, lang),
+				"admin_post_announcement",
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnViewAllAnnouncements, lang),
+				"admin_view_announcements",
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
 				i18n.Get(i18n.BtnViewUsers, lang),
 				"admin_users",
 			),
@@ -103,6 +157,12 @@ func MakeAdminKeyboard(lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData(
 				i18n.Get(i18n.BtnViewComplaints, lang),
 				"admin_complaints",
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				i18n.Get(i18n.BtnViewProposals, lang),
+				"admin_proposals",
 			),
 		),
 		tgbotapi.NewInlineKeyboardRow(

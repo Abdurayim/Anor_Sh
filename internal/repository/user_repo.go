@@ -112,6 +112,37 @@ func (r *UserRepository) GetByPhoneNumber(phoneNumber string) (*models.User, err
 	return &user, nil
 }
 
+// GetByID gets user by ID
+func (r *UserRepository) GetByID(id int) (*models.User, error) {
+	query := `
+		SELECT id, telegram_id, telegram_username, phone_number, child_name, child_class, language, registered_at
+		FROM users
+		WHERE id = $1
+	`
+
+	var user models.User
+	err := r.db.QueryRow(query, id).Scan(
+		&user.ID,
+		&user.TelegramID,
+		&user.TelegramUsername,
+		&user.PhoneNumber,
+		&user.ChildName,
+		&user.ChildClass,
+		&user.Language,
+		&user.RegisteredAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	return &user, nil
+}
+
 // GetAll gets all users with pagination
 func (r *UserRepository) GetAll(limit, offset int) ([]*models.User, error) {
 	query := `

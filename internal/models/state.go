@@ -15,11 +15,16 @@ type UserState struct {
 
 // StateData is a helper struct for storing state data
 type StateData struct {
-	PhoneNumber string `json:"phone_number,omitempty"`
-	ChildName   string `json:"child_name,omitempty"`
-	ChildClass  string `json:"child_class,omitempty"`
-	Language    string `json:"language,omitempty"`
-	ComplaintText string `json:"complaint_text,omitempty"`
+	PhoneNumber       string `json:"phone_number,omitempty"`
+	ChildName         string `json:"child_name,omitempty"`
+	ChildClass        string `json:"child_class,omitempty"`
+	Language          string `json:"language,omitempty"`
+	ComplaintText     string `json:"complaint_text,omitempty"`
+	ProposalText      string `json:"proposal_text,omitempty"`
+	ClassID           int    `json:"class_id,omitempty"`
+	AnnouncementText  string `json:"announcement_text,omitempty"`
+	AnnouncementTitle string `json:"announcement_title,omitempty"`
+	AnnouncementID    int    `json:"announcement_id,omitempty"`
 }
 
 // State constants
@@ -32,6 +37,14 @@ const (
 	StateRegistered          = "registered"
 	StateAwaitingComplaint   = "awaiting_complaint"
 	StateConfirmingComplaint = "confirming_complaint"
+	StateAwaitingProposal    = "awaiting_proposal"
+	StateConfirmingProposal  = "confirming_proposal"
 	StateAwaitingAdminPhone  = "awaiting_admin_phone"
 	StateAwaitingClassName   = "awaiting_class_name"
+	StateSelectClassForTimetable = "select_class_for_timetable"
+	StateAwaitingTimetableFile   = "awaiting_timetable_file"
+	StateAwaitingAnnouncementTitle = "awaiting_announcement_title"
+	StateAwaitingAnnouncementContent = "awaiting_announcement_content"
+	StateAwaitingAnnouncementFile    = "awaiting_announcement_file"
+	StateAwaitingEditedAnnouncementContent = "awaiting_edited_announcement_content"
 )

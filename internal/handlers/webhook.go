@@ -45,6 +45,15 @@ func HandleMessage(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleCommand(botService, message)
 	}
 
+	// Check for critical button presses that should override state (like admin panel)
+	// This must be checked BEFORE state routing
+	buttonText := message.Text
+	if buttonText == "👨‍💼 Ma'muriyat paneli" || buttonText == "👨‍💼 Панель администратора" {
+		// Clear any existing state and go to admin panel
+		_ = botService.StateManager.Clear(telegramID)
+		return HandleAdminCommand(botService, message)
+	}
+
 	// Check if user is registered
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
 	if err != nil {
@@ -91,8 +100,18 @@ func HandleCommand(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleStart(botService, message)
 	case "help":
 		return HandleHelp(botService, message)
+	case "cancel":
+		return HandleCancelCommand(botService, message)
 	case "complaint":
 		return HandleComplaintCommand(botService, message)
+	case "proposal":
+		return HandleProposalCommand(botService, message)
+	case "my_proposals":
+		return HandleMyProposalsCommand(botService, message)
+	case "timetable":
+		return HandleViewTimetableCommand(botService, message)
+	case "announcements":
+		return HandleViewAnnouncementsCommand(botService, message)
 	case "admin":
 		return HandleAdminCommand(botService, message)
 	case "admin_link":
@@ -105,6 +124,10 @@ func HandleCommand(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleDeleteClassCommand(botService, message)
 	case "toggle_class":
 		return HandleToggleClassCommand(botService, message)
+	case "upload_timetable":
+		return HandleUploadTimetableCommand(botService, message)
+	case "post_announcement":
+		return HandlePostAnnouncementCommand(botService, message)
 	default:
 		// Unknown command
 		return HandleStart(botService, message)

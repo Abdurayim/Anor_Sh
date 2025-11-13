@@ -68,6 +68,16 @@ func (s *UserService) GetUserByPhoneNumber(phoneNumber string) (*models.User, er
 	return user, nil
 }
 
+// GetUserByID gets user by ID
+func (s *UserService) GetUserByID(id int) (*models.User, error) {
+	user, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	return user, nil
+}
+
 // UpdateUser updates user information
 func (s *UserService) UpdateUser(telegramID int64, req *models.UpdateUserRequest) error {
 	err := s.repo.Update(telegramID, req)

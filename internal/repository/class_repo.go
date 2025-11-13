@@ -103,6 +103,33 @@ func (r *ClassRepository) GetActive() ([]*models.Class, error) {
 	return classes, nil
 }
 
+// GetByID gets class by ID
+func (r *ClassRepository) GetByID(id int) (*models.Class, error) {
+	query := `
+		SELECT id, class_name, is_active, created_at
+		FROM classes
+		WHERE id = $1
+	`
+
+	var class models.Class
+	err := r.db.QueryRow(query, id).Scan(
+		&class.ID,
+		&class.ClassName,
+		&class.IsActive,
+		&class.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get class: %w", err)
+	}
+
+	return &class, nil
+}
+
 // GetByName gets class by name
 func (r *ClassRepository) GetByName(className string) (*models.Class, error) {
 	query := `
@@ -134,6 +161,26 @@ func (r *ClassRepository) GetByName(className string) (*models.Class, error) {
 func (r *ClassRepository) Delete(className string) error {
 	query := `DELETE FROM classes WHERE class_name = $1`
 	result, err := r.db.Exec(query, className)
+	if err != nil {
+		return fmt.Errorf("failed to delete class: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("class not found")
+	}
+
+	return nil
+}
+
+// DeleteByID deletes a class by ID
+func (r *ClassRepository) DeleteByID(id int) error {
+	query := `DELETE FROM classes WHERE id = $1`
+	result, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete class: %w", err)
 	}
