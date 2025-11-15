@@ -139,7 +139,19 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 		return HandleLanguageSelection(botService, callback)
 	}
 
-	// Class selection (starts with "class_")
+	// Class delete callback (MUST be checked BEFORE generic "class_" check)
+	if len(data) > 13 && data[:13] == "class_delete_" {
+		fmt.Printf("[ROUTER DEBUG] Routing to HandleClassDeleteCallback, data: %s\n", data)
+		return HandleClassDeleteCallback(botService, callback)
+	}
+
+	// Class info callback (MUST be checked BEFORE generic "class_" check)
+	if len(data) > 11 && data[:11] == "class_info_" {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return nil
+	}
+
+	// Class selection for registration (generic "class_" - must be AFTER specific class_ checks)
 	if len(data) > 6 && data[:6] == "class_" {
 		return HandleClassSelection(botService, callback)
 	}
@@ -240,17 +252,6 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	// Admin view announcements callback
 	if data == "admin_view_announcements" {
 		return HandleAdminViewAnnouncementsCallback(botService, callback)
-	}
-
-	// Class delete callback
-	if len(data) > 13 && data[:13] == "class_delete_" {
-		return HandleClassDeleteCallback(botService, callback)
-	}
-
-	// Class info callback (just acknowledge, no action needed)
-	if len(data) > 11 && data[:11] == "class_info_" {
-		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
-		return nil
 	}
 
 	// Timetable delete callback

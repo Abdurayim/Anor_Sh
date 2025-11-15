@@ -444,14 +444,14 @@ func makeClassManagementKeyboard(classes []*models.Class, lang i18n.Language) tg
 		// Class name button (non-clickable, just for display)
 		nameBtn := tgbotapi.NewInlineKeyboardButtonData(
 			fmt.Sprintf("📚 %s", class.ClassName),
-			fmt.Sprintf("class_info_%s", class.ClassName),
+			fmt.Sprintf("class_info_%d", class.ID),
 		)
 		row = append(row, nameBtn)
 
 		// Delete button (separate)
 		deleteBtn := tgbotapi.NewInlineKeyboardButtonData(
 			"🗑 O'chirish / Удалить",
-			fmt.Sprintf("class_delete_%s", class.ClassName),
+			fmt.Sprintf("class_delete_%d", class.ID),
 		)
 		row = append(row, deleteBtn)
 
@@ -524,6 +524,9 @@ func HandleClassToggleCallback(botService *services.BotService, callback *tgbota
 func HandleClassDeleteCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	telegramID := callback.From.ID
 
+	// Debug log
+	fmt.Printf("[DEBUG] HandleClassDeleteCallback called. CallbackData: %s, UserID: %d\n", callback.Data, telegramID)
+
 	// Get user
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
 	if err != nil {
@@ -547,11 +550,25 @@ func HandleClassDeleteCallback(botService *services.BotService, callback *tgbota
 		return nil
 	}
 
-	// Extract class name from callback data
-	className := callback.Data[13:] // Remove "class_delete_" prefix
+	// Extract class ID from callback data
+	var classID int
+	n, err := fmt.Sscanf(callback.Data, "class_delete_%d", &classID)
+	fmt.Printf("[DEBUG] Parsed class ID: %d, n=%d, err=%v\n", classID, n, err)
+
+	if err != nil || n != 1 || classID == 0 {
+		text := "❌ Noto'g'ri ma'lumot / Неверные данные"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
+		return fmt.Errorf("failed to parse class ID from callback data: %s", callback.Data)
+	}
 
 	// Delete class
-	err = botService.ClassRepo.Delete(className)
+	fmt.Printf("[DEBUG] Attempting to delete class with ID: %d\n", classID)
+	err = botService.ClassRepo.DeleteByID(classID)
+	if err != nil {
+		fmt.Printf("[DEBUG] Delete failed: %v\n", err)
+	} else {
+		fmt.Printf("[DEBUG] Delete successful for class ID: %d\n", classID)
+	}
 	if err != nil {
 		text := fmt.Sprintf("❌ Xatolik / Ошибка: %v", err)
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)

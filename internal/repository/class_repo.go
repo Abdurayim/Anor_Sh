@@ -19,23 +19,21 @@ func NewClassRepository(db *sql.DB) *ClassRepository {
 func (r *ClassRepository) Create(className string) (*models.Class, error) {
 	query := `
 		INSERT INTO classes (class_name, is_active)
-		VALUES ($1, 1)
-		RETURNING id, class_name, is_active, created_at
+		VALUES (?, 1)
 	`
 
-	var class models.Class
-	err := r.db.QueryRow(query, className).Scan(
-		&class.ID,
-		&class.ClassName,
-		&class.IsActive,
-		&class.CreatedAt,
-	)
-
+	result, err := r.db.Exec(query, className)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create class: %w", err)
 	}
 
-	return &class, nil
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	// Get the created class
+	return r.GetByID(int(id))
 }
 
 // GetAll gets all classes
@@ -108,7 +106,7 @@ func (r *ClassRepository) GetByID(id int) (*models.Class, error) {
 	query := `
 		SELECT id, class_name, is_active, created_at
 		FROM classes
-		WHERE id = $1
+		WHERE id = ?
 	`
 
 	var class models.Class
@@ -135,7 +133,7 @@ func (r *ClassRepository) GetByName(className string) (*models.Class, error) {
 	query := `
 		SELECT id, class_name, is_active, created_at
 		FROM classes
-		WHERE class_name = $1
+		WHERE class_name = ?
 	`
 
 	var class models.Class
@@ -159,7 +157,7 @@ func (r *ClassRepository) GetByName(className string) (*models.Class, error) {
 
 // Delete deletes a class by name
 func (r *ClassRepository) Delete(className string) error {
-	query := `DELETE FROM classes WHERE class_name = $1`
+	query := `DELETE FROM classes WHERE class_name = ?`
 	result, err := r.db.Exec(query, className)
 	if err != nil {
 		return fmt.Errorf("failed to delete class: %w", err)
@@ -179,7 +177,7 @@ func (r *ClassRepository) Delete(className string) error {
 
 // DeleteByID deletes a class by ID
 func (r *ClassRepository) DeleteByID(id int) error {
-	query := `DELETE FROM classes WHERE id = $1`
+	query := `DELETE FROM classes WHERE id = ?`
 	result, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete class: %w", err)
@@ -202,7 +200,7 @@ func (r *ClassRepository) ToggleActive(className string) error {
 	query := `
 		UPDATE classes
 		SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
-		WHERE class_name = $1
+		WHERE class_name = ?
 	`
 	result, err := r.db.Exec(query, className)
 	if err != nil {
@@ -233,7 +231,7 @@ func (r *ClassRepository) Count() (int, error) {
 
 // Exists checks if a class name exists and is active
 func (r *ClassRepository) Exists(className string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM classes WHERE class_name = $1 AND is_active = 1)`
+	query := `SELECT EXISTS(SELECT 1 FROM classes WHERE class_name = ? AND is_active = 1)`
 	var exists bool
 	err := r.db.QueryRow(query, className).Scan(&exists)
 	if err != nil {
