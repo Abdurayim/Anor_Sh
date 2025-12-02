@@ -139,8 +139,22 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	// Answer callback query
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅")
 
+	// Get current selected student
+	var student *models.StudentWithClass
+	if user.CurrentSelectedStudentID != nil {
+		student, err = botService.StudentService.GetStudentByIDWithClass(*user.CurrentSelectedStudentID)
+		if err != nil || student == nil {
+			log.Printf("Failed to get student: %v", err)
+			text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
+			return botService.TelegramService.SendMessage(chatID, text, nil)
+		}
+	} else {
+		text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
 	// Generate DOCX document
-	docPath, filename, err := botService.DocumentService.GenerateComplaintDocument(user, stateData.ComplaintText)
+	docPath, filename, err := botService.DocumentService.GenerateComplaintDocument(user, student, stateData.ComplaintText)
 	if err != nil {
 		log.Printf("Failed to generate document: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
@@ -184,7 +198,7 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	_ = botService.TelegramService.SendMessage(chatID, text, keyboard)
 
 	// Notify admins with DOCX document
-	go notifyAdminsWithDocument(botService, user, complaint, fileID)
+	go notifyAdminsWithDocument(botService, user, student, complaint, fileID)
 
 	return nil
 }
@@ -220,7 +234,7 @@ func HandleComplaintCancellation(botService *services.BotService, callback *tgbo
 }
 
 // notifyAdminsWithDocument sends complaint as DOCX document to all admins
-func notifyAdminsWithDocument(botService *services.BotService, user *models.User, complaint *models.Complaint, fileID string) {
+func notifyAdminsWithDocument(botService *services.BotService, user *models.User, student *models.StudentWithClass, complaint *models.Complaint, fileID string) {
 	// Get admin telegram IDs
 	adminIDs, err := botService.GetAdminTelegramIDs()
 	if err != nil {
@@ -239,6 +253,7 @@ func notifyAdminsWithDocument(botService *services.BotService, user *models.User
 		username = "yo'q / нет"
 	}
 
+	studentFullName := fmt.Sprintf("%s %s", student.LastName, student.FirstName)
 	caption := fmt.Sprintf(
 		"<b>YANGI SHIKOYAT / НОВАЯ ЖАЛОБА</b>\n\n"+
 			"ID: #%d\n"+
@@ -250,8 +265,8 @@ func notifyAdminsWithDocument(botService *services.BotService, user *models.User
 			"Shikoyat hujjat sifatida yuqorida\n"+
 			"Жалоба в формате документа выше",
 		complaint.ID,
-		user.ChildName,
-		user.ChildClass,
+		studentFullName,
+		student.ClassName,
 		user.PhoneNumber,
 		username,
 		utils.FormatDateTime(complaint.CreatedAt),
@@ -332,14 +347,26 @@ func HandleSettingsCommand(botService *services.BotService, message *tgbotapi.Me
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	lang := i18n.GetLanguage(user.Language)
-	_ = lang // Will be used in future for localized settings
-
 	// Format user info
 	text := "⚙️ Sozlamalar / Настройки\n\n"
-	text += fmt.Sprintf("👤 Farzand / Ребенок: %s\n", user.ChildName)
-	text += fmt.Sprintf("🎓 Sinf / Класс: %s\n", user.ChildClass)
-	text += fmt.Sprintf("📱 Telefon / Телефон: %s\n", utils.FormatPhoneNumber(user.PhoneNumber))
+
+	// Show current selected child if any
+	if user.CurrentSelectedStudentID != nil {
+		student, err := botService.StudentService.GetStudentByIDWithClass(*user.CurrentSelectedStudentID)
+		if err == nil && student != nil {
+			studentFullName := fmt.Sprintf("%s %s", student.LastName, student.FirstName)
+			text += fmt.Sprintf("👤 Joriy farzand / Текущий ребенок: %s\n", studentFullName)
+			text += fmt.Sprintf("🎓 Sinf / Класс: %s\n", student.ClassName)
+		}
+	}
+
+	// Get all children
+	children, err := botService.StudentService.GetParentStudents(user.ID)
+	if err == nil && len(children) > 0 {
+		text += fmt.Sprintf("\n👨‍👩‍👧‍👦 Barcha farzandlar / Все дети: %d\n", len(children))
+	}
+
+	text += fmt.Sprintf("\n📱 Telefon / Телефон: %s\n", utils.FormatPhoneNumber(user.PhoneNumber))
 	text += fmt.Sprintf("🌍 Til / Язык: %s\n", user.Language)
 
 	return botService.TelegramService.SendMessage(chatID, text, nil)

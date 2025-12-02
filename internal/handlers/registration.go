@@ -45,7 +45,7 @@ func HandleLanguageSelection(botService *services.BotService, callback *tgbotapi
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
-// HandlePhoneNumber handles phone number input
+// HandlePhoneNumber handles phone number input and completes registration
 func HandlePhoneNumber(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
@@ -66,69 +66,61 @@ func HandlePhoneNumber(botService *services.BotService, message *tgbotapi.Messag
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// Update state with phone number
-	stateData.PhoneNumber = validPhone
-	err = botService.StateManager.Set(telegramID, models.StateAwaitingChildName, stateData)
-	if err != nil {
-		return err
+	// Create user (parent) - students will be linked separately
+	userReq := &models.CreateUserRequest{
+		TelegramID:       telegramID,
+		TelegramUsername: message.From.UserName,
+		PhoneNumber:      validPhone,
+		Language:         stateData.Language,
 	}
 
-	// Send confirmation and request child name
-	text := i18n.Get(i18n.MsgPhoneReceived, lang)
-	text = fmt.Sprintf(text, validPhone)
-	_ = botService.TelegramService.SendMessage(chatID, text, utils.RemoveKeyboard())
-
-	text = i18n.Get(i18n.MsgRequestChildName, lang)
-	return botService.TelegramService.SendMessage(chatID, text, nil)
-}
-
-// HandleChildName handles child name input
-func HandleChildName(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
-	telegramID := message.From.ID
-	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(stateData.Language)
-
-	// Validate name
-	childName, err := validator.ValidateName(message.Text)
-	if err != nil {
-		text := i18n.Get(i18n.ErrInvalidName, lang) + "\n\n" + err.Error()
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	// Update state with child name
-	stateData.ChildName = childName
-	err = botService.StateManager.Set(telegramID, models.StateAwaitingChildClass, stateData)
-	if err != nil {
-		return err
-	}
-
-	// Send confirmation
-	text := i18n.Get(i18n.MsgChildNameReceived, lang)
-	text = fmt.Sprintf(text, childName)
-	_ = botService.TelegramService.SendMessage(chatID, text, nil)
-
-	// Get active classes
-	classes, err := botService.ClassRepo.GetActive()
+	user, err := botService.UserService.CreateUser(userReq)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	if len(classes) == 0 {
-		text := "❌ Hozircha mavjud sinflar yo'q. Iltimos, ma'muriyatga murojaat qiling.\n\n" +
-			"❌ Пока нет доступных классов. Пожалуйста, обратитесь к администрации."
-		return botService.TelegramService.SendMessage(chatID, text, nil)
+	// Clear state
+	err = botService.StateManager.Clear(telegramID)
+	if err != nil {
+		return err
 	}
 
-	// Send class selection keyboard with improved formatting
-	text = "🎓 <b>Sinf tanlash / Выбор класса</b>\n\n"
-	text += "Farzandingiz qaysi sinfda o'qiydi? Quyidagi tugmalardan tanlang:\n"
-	text += "В каком классе учится ваш ребенок? Выберите из кнопок ниже:\n\n"
-	text += fmt.Sprintf("📚 Mavjud sinflar / Доступные классы: <b>%d ta</b>\n\n", len(classes))
-	text += "👇 Sinfni tanlash uchun tugmani bosing:"
+	// Link admin telegram ID if this user is an admin
+	_ = botService.AdminRepo.UpdateTelegramID(user.PhoneNumber, user.TelegramID)
 
-	keyboard := utils.MakeClassSelectionKeyboard(classes, lang)
-	return botService.TelegramService.SendMessage(chatID, text, keyboard)
+	// Send registration complete message
+	text := fmt.Sprintf(
+		"✅ Ro'yxatdan o'tish muvaffaqiyatli yakunlandi!\n"+
+			"Telefon: %s\n\n"+
+			"Farzandlaringiz ma'lumotlarini bog'lash uchun ma'muriyatga murojaat qiling.\n\n"+
+			"✅ Регистрация успешно завершена!\n"+
+			"Телефон: %s\n\n"+
+			"Для привязки данных ваших детей обратитесь к администрации.",
+		validPhone, validPhone,
+	)
+
+	// Check if user is admin to show appropriate keyboard
+	isAdmin, _ := botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+	keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
+
+	return botService.TelegramService.SendMessage(
+		chatID,
+		text,
+		keyboard,
+	)
+}
+
+// HandleChildName - DEPRECATED: No longer used in new architecture
+// Students are now managed separately and linked to parents by admin/teachers
+func HandleChildName(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
+	telegramID := message.From.ID
+	chatID := message.Chat.ID
+
+	// Redirect to registration completion
+	text := "Registration flow has been updated. Please use /start to begin registration."
+	_ = botService.StateManager.Clear(telegramID)
+	return botService.TelegramService.SendMessage(chatID, text, nil)
 }
 
 // HandleClassSelection handles class selection from inline keyboard
@@ -138,14 +130,6 @@ func HandleClassSelection(botService *services.BotService, callback *tgbotapi.Ca
 
 	// Extract class name from callback data
 	className := callback.Data[6:] // Remove "class_" prefix
-
-	// Get state data
-	stateData, err := botService.StateManager.GetData(telegramID)
-	if err != nil {
-		return err
-	}
-
-	lang := i18n.GetLanguage(stateData.Language)
 
 	// Verify class exists and is active
 	exists, err := botService.ClassRepo.Exists(className)
@@ -159,113 +143,23 @@ func HandleClassSelection(botService *services.BotService, callback *tgbotapi.Ca
 		return nil
 	}
 
-	// Answer callback query
+	// Answer callback query - DEPRECATED FLOW
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
-	// Create user
-	userReq := &models.CreateUserRequest{
-		TelegramID:       telegramID,
-		TelegramUsername: callback.From.UserName,
-		PhoneNumber:      stateData.PhoneNumber,
-		ChildName:        stateData.ChildName,
-		ChildClass:       className,
-		Language:         stateData.Language,
-	}
-
-	user, err := botService.UserService.CreateUser(userReq)
-	if err != nil {
-		text := i18n.Get(i18n.ErrDatabaseError, lang)
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	// Update state to registered
-	err = botService.StateManager.Clear(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Send registration complete message
-	text := i18n.Get(i18n.MsgRegistrationComplete, lang)
-	text = fmt.Sprintf(text, user.ChildName, user.ChildClass, user.PhoneNumber)
-	text = utils.EscapeMarkdown(text)
-
-	// Link admin telegram ID if this user is an admin
-	// This links the admin's telegram_id to their admin record for faster future checks
-	_ = botService.AdminRepo.UpdateTelegramID(user.PhoneNumber, user.TelegramID)
-
-	// Check if user is admin to show appropriate keyboard
-	isAdmin, _ := botService.IsAdmin(user.PhoneNumber, user.TelegramID)
-	keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
-
-	return botService.TelegramService.SendMessage(
-		chatID,
-		text,
-		keyboard,
-	)
+	// Redirect to new registration flow
+	text := "Registration flow has been updated. Please use /start to begin registration."
+	_ = botService.StateManager.Clear(telegramID)
+	return botService.TelegramService.SendMessage(chatID, text, nil)
 }
 
-// HandleChildClass handles child class input and completes registration
+// HandleChildClass - DEPRECATED: No longer used in new architecture
 // This is kept for backward compatibility but now we prefer inline buttons
 func HandleChildClass(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(stateData.Language)
 
-	// Validate class - check if it exists in database
-	className := utils.SanitizeClassName(message.Text)
-
-	exists, err := botService.ClassRepo.Exists(className)
-	if err != nil {
-		text := i18n.Get(i18n.ErrDatabaseError, lang)
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	if !exists {
-		text := "❌ Bu sinf ro'yxatda yo'q. Iltimos, tugmalardan tanlang yoki ma'muriyatga murojaat qiling.\n\n" +
-			"❌ Этого класса нет в списке. Пожалуйста, выберите из кнопок или обратитесь к администрации."
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	childClass := className
-
-	// Create user
-	userReq := &models.CreateUserRequest{
-		TelegramID:       telegramID,
-		TelegramUsername: message.From.UserName,
-		PhoneNumber:      stateData.PhoneNumber,
-		ChildName:        stateData.ChildName,
-		ChildClass:       childClass,
-		Language:         stateData.Language,
-	}
-
-	user, err := botService.UserService.CreateUser(userReq)
-	if err != nil {
-		text := i18n.Get(i18n.ErrDatabaseError, lang)
-		return botService.TelegramService.SendMessage(chatID, text, nil)
-	}
-
-	// Update state to registered
-	err = botService.StateManager.Clear(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Send registration complete message
-	text := i18n.Get(i18n.MsgRegistrationComplete, lang)
-	text = fmt.Sprintf(text, user.ChildName, user.ChildClass, user.PhoneNumber)
-	text = utils.EscapeMarkdown(text)
-
-	// Link admin telegram ID if this user is an admin
-	// This links the admin's telegram_id to their admin record for faster future checks
-	_ = botService.AdminRepo.UpdateTelegramID(user.PhoneNumber, user.TelegramID)
-
-	// Check if user is admin to show appropriate keyboard
-	isAdmin, _ := botService.IsAdmin(user.PhoneNumber, user.TelegramID)
-	keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
-
-	return botService.TelegramService.SendMessage(
-		chatID,
-		text,
-		keyboard,
-	)
+	// Redirect to new registration flow
+	text := "Registration flow has been updated. Please use /start to begin registration."
+	_ = botService.StateManager.Clear(telegramID)
+	return botService.TelegramService.SendMessage(chatID, text, nil)
 }

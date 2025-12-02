@@ -29,8 +29,29 @@ func HandleViewTimetableCommand(botService *services.BotService, message *tgbota
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get timetable for user's class
-	timetable, err := botService.TimetableService.GetTimetableByClassName(user.ChildClass)
+	// Check if user has a selected student
+	if user.CurrentSelectedStudentID == nil {
+		text := "Iltimos, farzandingizni tanlang yoki ma'muriyatga murojaat qiling.\n" +
+			"Пожалуйста, выберите вашего ребенка или обратитесь к администрации."
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get student information to find their class
+	student, err := botService.StudentRepo.GetByID(*user.CurrentSelectedStudentID)
+	if err != nil || student == nil {
+		text := i18n.Get(i18n.ErrDatabaseError, lang)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get class information
+	class, err := botService.ClassRepo.GetByID(student.ClassID)
+	if err != nil || class == nil {
+		text := i18n.Get(i18n.ErrDatabaseError, lang)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get timetable for student's class
+	timetable, err := botService.TimetableService.GetTimetableByClassName(class.ClassName)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -42,7 +63,7 @@ func HandleViewTimetableCommand(botService *services.BotService, message *tgbota
 	}
 
 	// Send timetable file
-	caption := fmt.Sprintf("📅 Dars jadvali / Расписание уроков\nSinf / Класс: %s", user.ChildClass)
+	caption := fmt.Sprintf("📅 Dars jadvali / Расписание уроков\nSinf / Класс: %s", class.ClassName)
 	return botService.TelegramService.SendDocumentByFileID(chatID, timetable.TelegramFileID, caption)
 }
 

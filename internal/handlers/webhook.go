@@ -54,7 +54,14 @@ func HandleMessage(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleAdminCommand(botService, message)
 	}
 
-	// Check if user is registered
+	// Check if user is a teacher first
+	teacher, err := botService.TeacherService.GetTeacherByTelegramID(telegramID)
+	if err == nil && teacher != nil {
+		// This is a registered teacher, handle as teacher
+		return HandleTeacherMessage(botService, message, teacher)
+	}
+
+	// Check if user is registered as parent
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
 	if err != nil {
 		return err
@@ -128,6 +135,20 @@ func HandleCommand(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleUploadTimetableCommand(botService, message)
 	case "post_announcement":
 		return HandlePostAnnouncementCommand(botService, message)
+	case "add_student":
+		return HandleAddStudentCommand(botService, message)
+	case "link_student":
+		return HandleLinkStudentCommand(botService, message)
+	case "list_students":
+		return HandleListStudentsCommand(botService, message)
+	case "view_parent_children":
+		return HandleViewParentChildrenCommand(botService, message)
+	case "my_children":
+		return HandleMyChildrenCommand(botService, message)
+	case "add_teacher":
+		return HandleAddTeacherCommand(botService, message)
+	case "list_teachers":
+		return HandleListTeachersCommand(botService, message)
 	default:
 		// Unknown command
 		return HandleStart(botService, message)

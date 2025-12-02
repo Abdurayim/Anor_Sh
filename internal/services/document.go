@@ -23,20 +23,21 @@ func NewDocumentService(tempDir string) *DocumentService {
 
 // GenerateComplaintDocument generates a DOCX document for a complaint
 // Returns the file path and filename
-func (s *DocumentService) GenerateComplaintDocument(user *models.User, complaintText string) (filePath, filename string, err error) {
+func (s *DocumentService) GenerateComplaintDocument(user *models.User, student *models.StudentWithClass, complaintText string) (filePath, filename string, err error) {
 	// Generate filename
-	filename = utils.GenerateComplaintFilename(user.ChildName, user.ChildClass)
+	childFullName := fmt.Sprintf("%s %s", student.LastName, student.FirstName)
+	filename = utils.GenerateComplaintFilename(childFullName, student.ClassName)
 
 	// Create full path
 	filePath = filepath.Join(s.tempDir, filename)
 
 	// Prepare document data
 	data := &docx.ComplaintData{
-		ChildName:     user.ChildName,
-		ChildClass:    user.ChildClass,
+		ChildName:     childFullName,
+		ChildClass:    student.ClassName,
 		PhoneNumber:   user.PhoneNumber,
 		ComplaintText: complaintText,
-		ParentName:    user.ChildName, // Using child name as reference
+		ParentName:    childFullName, // Using child name as reference
 		Date:          time.Now(),
 	}
 
@@ -71,20 +72,21 @@ func (s *DocumentService) GenerateComplaintDocument(user *models.User, complaint
 
 // GenerateProposalDocument generates a DOCX document for a proposal
 // Returns the file path and filename
-func (s *DocumentService) GenerateProposalDocument(user *models.User, proposalText string) (filePath, filename string, err error) {
+func (s *DocumentService) GenerateProposalDocument(user *models.User, student *models.StudentWithClass, proposalText string) (filePath, filename string, err error) {
 	// Generate filename (similar to complaint, but with "proposal" prefix)
-	filename = utils.GenerateProposalFilename(user.ChildName, user.ChildClass)
+	childFullName := fmt.Sprintf("%s %s", student.LastName, student.FirstName)
+	filename = utils.GenerateProposalFilename(childFullName, student.ClassName)
 
 	// Create full path
 	filePath = filepath.Join(s.tempDir, filename)
 
 	// Prepare document data (reusing ComplaintData structure with different title)
 	data := &docx.ComplaintData{
-		ChildName:     user.ChildName,
-		ChildClass:    user.ChildClass,
+		ChildName:     childFullName,
+		ChildClass:    student.ClassName,
 		PhoneNumber:   user.PhoneNumber,
 		ComplaintText: proposalText, // Using same field for proposal text
-		ParentName:    user.ChildName,
+		ParentName:    childFullName,
 		Date:          time.Now(),
 	}
 

@@ -79,8 +79,27 @@ func (s *UserService) GetUserByID(id int) (*models.User, error) {
 }
 
 // UpdateUser updates user information
-func (s *UserService) UpdateUser(telegramID int64, req *models.UpdateUserRequest) error {
-	err := s.repo.Update(telegramID, req)
+func (s *UserService) UpdateUser(userID int, req *models.UpdateUserRequest) error {
+	err := s.repo.Update(userID, req)
+	if err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateUserByTelegramID updates user information by telegram ID
+func (s *UserService) UpdateUserByTelegramID(telegramID int64, req *models.UpdateUserRequest) error {
+	// Get user first to get the ID
+	user, err := s.repo.GetByTelegramID(telegramID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	err = s.repo.Update(user.ID, req)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
@@ -98,11 +117,21 @@ func (s *UserService) GetAllUsers(limit, offset int) ([]*models.User, error) {
 	return users, nil
 }
 
-// GetUsersByClass gets users by class
-func (s *UserService) GetUsersByClass(class string) ([]*models.User, error) {
-	users, err := s.repo.GetByClass(class)
+// GetParentsByClassID gets all parents who have children in a specific class
+func (s *UserService) GetParentsByClassID(classID int) ([]*models.User, error) {
+	users, err := s.repo.GetParentsByClassID(classID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get users by class: %w", err)
+		return nil, fmt.Errorf("failed to get parents by class: %w", err)
+	}
+
+	return users, nil
+}
+
+// GetParentsByClassIDs gets all parents who have children in any of the specified classes
+func (s *UserService) GetParentsByClassIDs(classIDs []int) ([]*models.User, error) {
+	users, err := s.repo.GetParentsByClassIDs(classIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get parents by classes: %w", err)
 	}
 
 	return users, nil

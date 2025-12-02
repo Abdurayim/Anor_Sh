@@ -21,6 +21,10 @@ type BotService struct {
 	AnnouncementRepo    *repository.AnnouncementRepository
 	AdminRepo           *repository.AdminRepository
 	ClassRepo           *repository.ClassRepository
+	TeacherRepo         *repository.TeacherRepository
+	StudentRepo         *repository.StudentRepository
+	TestResultRepo      *repository.TestResultRepository
+	AttendanceRepo      *repository.AttendanceRepository
 	StateManager        *state.Manager
 	TelegramService     *TelegramService
 	UserService         *UserService
@@ -29,6 +33,10 @@ type BotService struct {
 	TimetableService    *TimetableService
 	AnnouncementService *AnnouncementService
 	DocumentService     *DocumentService
+	TeacherService      *TeacherService
+	StudentService      *StudentService
+	TestResultService   *TestResultService
+	AttendanceService   *AttendanceService
 }
 
 // NewBotService creates a new bot service
@@ -47,6 +55,10 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 	announcementRepo := repository.NewAnnouncementRepository(db)
 	adminRepo := repository.NewAdminRepository(db)
 	classRepo := repository.NewClassRepository(db)
+	teacherRepo := repository.NewTeacherRepository(db)
+	studentRepo := repository.NewStudentRepository(db)
+	testResultRepo := repository.NewTestResultRepository(db)
+	attendanceRepo := repository.NewAttendanceRepository(db)
 
 	// Initialize state manager
 	stateManager := state.NewManager(db)
@@ -59,6 +71,10 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 	timetableService := NewTimetableService(timetableRepo, classRepo)
 	announcementService := NewAnnouncementService(announcementRepo)
 	documentService := NewDocumentService("./temp_docs") // temp directory for generated documents
+	teacherService := NewTeacherService(db)
+	studentService := NewStudentService(db)
+	testResultService := NewTestResultService(db)
+	attendanceService := NewAttendanceService(db)
 
 	return &BotService{
 		Bot:                 bot,
@@ -70,6 +86,10 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 		AnnouncementRepo:    announcementRepo,
 		AdminRepo:           adminRepo,
 		ClassRepo:           classRepo,
+		TeacherRepo:         teacherRepo,
+		StudentRepo:         studentRepo,
+		TestResultRepo:      testResultRepo,
+		AttendanceRepo:      attendanceRepo,
 		StateManager:        stateManager,
 		TelegramService:     telegramService,
 		UserService:         userService,
@@ -78,6 +98,10 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 		TimetableService:    timetableService,
 		AnnouncementService: announcementService,
 		DocumentService:     documentService,
+		TeacherService:      teacherService,
+		StudentService:      studentService,
+		TestResultService:   testResultService,
+		AttendanceService:   attendanceService,
 	}, nil
 }
 

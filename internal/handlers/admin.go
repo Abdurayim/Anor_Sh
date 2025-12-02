@@ -71,11 +71,26 @@ func HandleAdminUsersCallback(botService *services.BotService, callback *tgbotap
 	text += fmt.Sprintf("Jami / Всего: %d\n\n", totalCount)
 
 	for i, user := range users {
-		text += fmt.Sprintf("%d. %s - %s sinf\n", i+1, user.ChildName, user.ChildClass)
-		text += fmt.Sprintf("   📱 %s\n", user.PhoneNumber)
+		// Get children count for this parent
+		children, _ := botService.StudentService.GetParentStudents(user.ID)
+		childrenCount := len(children)
+
+		text += fmt.Sprintf("%d. 📱 %s\n", i+1, user.PhoneNumber)
 		if user.TelegramUsername != "" {
 			text += fmt.Sprintf("   @%s\n", user.TelegramUsername)
 		}
+		text += fmt.Sprintf("   👶 Farzandlar / Дети: %d\n", childrenCount)
+
+		// Show children if any
+		for j, child := range children {
+			if j < 2 { // Show max 2 children in list
+				text += fmt.Sprintf("      • %s %s (%s)\n", child.StudentLastName, child.StudentFirstName, child.ClassName)
+			}
+		}
+		if childrenCount > 2 {
+			text += fmt.Sprintf("      ...va yana %d ta / ...и ещё %d\n", childrenCount-2, childrenCount-2)
+		}
+
 		text += fmt.Sprintf("   📅 %s\n\n", utils.FormatDate(user.RegisteredAt))
 	}
 
@@ -117,8 +132,12 @@ func HandleAdminComplaintsCallback(botService *services.BotService, callback *tg
 			statusText = "Arxivlangan / Архивировано"
 		}
 
-		text += fmt.Sprintf("%d. %s #%d - %s %s\n", i+1, statusEmoji, c.ID, c.ChildName, c.ChildClass)
-		text += fmt.Sprintf("   📱 %s\n", c.PhoneNumber)
+		text += fmt.Sprintf("%d. %s #%d\n", i+1, statusEmoji, c.ID)
+		text += fmt.Sprintf("   📱 %s", c.PhoneNumber)
+		if c.TelegramUsername != "" {
+			text += fmt.Sprintf(" (@%s)", c.TelegramUsername)
+		}
+		text += "\n"
 		preview := utils.TruncateText(c.ComplaintText, 60)
 		text += fmt.Sprintf("   💬 %s\n", preview)
 		text += fmt.Sprintf("   📅 %s\n", utils.FormatDateTime(c.CreatedAt))
@@ -868,14 +887,13 @@ func HandleAdminProposalsCallback(botService *services.BotService, callback *tgb
 
 		// Get user info
 		user, _ := botService.UserService.GetUserByID(p.UserID)
-		userName := "N/A"
-		userClass := "N/A"
+		userPhone := "N/A"
 		if user != nil {
-			userName = user.ChildName
-			userClass = user.ChildClass
+			userPhone = user.PhoneNumber
 		}
 
-		text += fmt.Sprintf("%d. %s #%d - %s %s\n", i+1, statusEmoji, p.ID, userName, userClass)
+		text += fmt.Sprintf("%d. %s #%d\n", i+1, statusEmoji, p.ID)
+		text += fmt.Sprintf("   📱 %s\n", userPhone)
 		preview := utils.TruncateText(p.ProposalText, 60)
 		text += fmt.Sprintf("   💡 %s\n", preview)
 		text += fmt.Sprintf("   📅 %s\n", utils.FormatDateTime(p.CreatedAt))

@@ -139,8 +139,22 @@ func HandleProposalConfirmation(botService *services.BotService, callback *tgbot
 	// Answer callback query
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅")
 
+	// Get current selected student
+	var student *models.StudentWithClass
+	if user.CurrentSelectedStudentID != nil {
+		student, err = botService.StudentService.GetStudentByIDWithClass(*user.CurrentSelectedStudentID)
+		if err != nil || student == nil {
+			log.Printf("Failed to get student: %v", err)
+			text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
+			return botService.TelegramService.SendMessage(chatID, text, nil)
+		}
+	} else {
+		text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
 	// Generate DOCX document
-	docPath, filename, err := botService.DocumentService.GenerateProposalDocument(user, stateData.ProposalText)
+	docPath, filename, err := botService.DocumentService.GenerateProposalDocument(user, student, stateData.ProposalText)
 	if err != nil {
 		log.Printf("Failed to generate document: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
@@ -242,16 +256,12 @@ func notifyAdminsWithProposalDocument(botService *services.BotService, user *mod
 	caption := fmt.Sprintf(
 		"<b>YANGI TAKLIF / НОВОЕ ПРЕДЛОЖЕНИЕ</b>\n\n"+
 			"ID: #%d\n"+
-			"Farzand / Ребенок: <b>%s</b>\n"+
-			"Sinf / Класс: <b>%s</b>\n"+
 			"Telefon / Телефон: %s\n"+
 			"Username: @%s\n"+
 			"Sana / Дата: %s\n\n"+
 			"Taklif hujjat sifatida yuqorida\n"+
 			"Предложение в формате документа выше",
 		proposal.ID,
-		user.ChildName,
-		user.ChildClass,
 		user.PhoneNumber,
 		username,
 		utils.FormatDateTime(proposal.CreatedAt),

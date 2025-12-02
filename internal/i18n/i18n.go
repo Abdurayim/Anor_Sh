@@ -72,6 +72,62 @@ const (
 	MsgNewComplaint           = "new_complaint"
 	MsgNewProposal            = "new_proposal"
 
+	// Teacher flow
+	MsgTeacherWelcome         = "teacher_welcome"
+	MsgTeacherRegistered      = "teacher_registered"
+	MsgTeacherMainMenu        = "teacher_main_menu"
+	MsgTeacherPanel           = "teacher_panel"
+
+	// Student management
+	MsgSelectClass            = "select_class"
+	MsgRequestStudentFirstName = "request_student_first_name"
+	MsgRequestStudentLastName = "request_student_last_name"
+	MsgStudentAdded           = "student_added"
+	MsgStudentList            = "student_list"
+	MsgNoStudentsInClass      = "no_students_in_class"
+	MsgSelectStudent          = "select_student"
+	MsgStudentSelected        = "student_selected"
+
+	// Parent multi-child flow
+	MsgSelectYourChild        = "select_your_child"
+	MsgChildLinked            = "child_linked"
+	MsgMaxChildrenReached     = "max_children_reached"
+	MsgMyChildren             = "my_children"
+	MsgCurrentChild           = "current_child"
+	MsgSwitchChild            = "switch_child"
+	MsgChildSwitched          = "child_switched"
+
+	// Test results
+	MsgRequestSubjectName     = "request_subject_name"
+	MsgRequestTestScore       = "request_test_score"
+	MsgRequestTestDate        = "request_test_date"
+	MsgTestResultAdded        = "test_result_added"
+	MsgTestResultUpdated      = "test_result_updated"
+	MsgMyTestResults          = "my_test_results"
+	MsgNoTestResults          = "no_test_results"
+	MsgClassTestResults       = "class_test_results"
+
+	// Attendance
+	MsgMarkAttendance         = "mark_attendance"
+	MsgSelectAbsentStudents   = "select_absent_students"
+	MsgAttendanceMarked       = "attendance_marked"
+	MsgMyAttendance           = "my_attendance"
+	MsgNoAttendanceRecords    = "no_attendance_records"
+	MsgAttendanceTaken        = "attendance_taken"
+	MsgAttendanceNotTaken     = "attendance_not_taken"
+	MsgAttendancePresent      = "attendance_present"
+	MsgAttendanceAbsent       = "attendance_absent"
+
+	// Announcement multi-class
+	MsgSelectTargetClasses    = "select_target_classes"
+	MsgClassesSelected        = "classes_selected"
+	MsgAnnouncementBroadcast  = "announcement_broadcast"
+
+	// Class deletion
+	MsgClassDeleted           = "class_deleted"
+	MsgClassDeletedReselect   = "class_deleted_reselect"
+	MsgPleaseSelectNewClass   = "please_select_new_class"
+
 	// Buttons
 	BtnUzbek                  = "btn_uzbek"
 	BtnRussian                = "btn_russian"
@@ -104,6 +160,27 @@ const (
 	BtnExport                 = "btn_export"
 	BtnEdit                   = "btn_edit"
 	BtnDelete                 = "btn_delete"
+	BtnAddTeacher             = "btn_add_teacher"
+	BtnManageTeachers         = "btn_manage_teachers"
+	BtnAddStudent             = "btn_add_student"
+	BtnManageStudents         = "btn_manage_students"
+	BtnExportTestResults      = "btn_export_test_results"
+	BtnExportAttendance       = "btn_export_attendance"
+
+	// Teacher buttons
+	BtnTeacherPanel           = "btn_teacher_panel"
+	BtnMyClasses              = "btn_my_classes"
+	BtnAddTestResult          = "btn_add_test_result"
+	BtnMarkAttendance         = "btn_mark_attendance"
+	BtnViewClassStudents      = "btn_view_class_students"
+
+	// Parent buttons
+	BtnMyTestResults          = "btn_my_test_results"
+	BtnMyAttendance           = "btn_my_attendance"
+	BtnMyChildren             = "btn_my_children"
+	BtnAddAnotherChild        = "btn_add_another_child"
+	BtnSwitchChild            = "btn_switch_child"
+	BtnFinishAttendance       = "btn_finish_attendance"
 
 	// Errors
 	ErrInvalidPhone           = "err_invalid_phone"

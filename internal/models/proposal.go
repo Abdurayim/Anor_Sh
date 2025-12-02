@@ -25,8 +25,9 @@ type ProposalWithUser struct {
 	UserTelegramID   int64     `json:"user_telegram_id" db:"user_telegram_id"`
 	TelegramUsername string    `json:"telegram_username" db:"telegram_username"`
 	PhoneNumber      string    `json:"phone_number" db:"phone_number"`
-	ChildName        string    `json:"child_name" db:"child_name"`
-	ChildClass       string    `json:"child_class" db:"child_class"`
+	Language         string    `json:"language" db:"language"`
+	// Note: Child information removed - parents can have multiple children
+	// Use parent_students table to get student relationships
 }
 
 // CreateProposalRequest is the request to create a new proposal

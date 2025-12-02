@@ -38,9 +38,9 @@ func main() {
 	log.Println("✓ Temporary documents directory created")
 
 	// Run migrations (SQLite version)
+	// Migration 003 is a complete redesign that drops and recreates all tables
 	migrationFiles := []string{
-		"internal/database/migrations/001_initial_sqlite.sql",
-		"internal/database/migrations/002_add_proposals_timetables_announcements.sql",
+		"internal/database/migrations/003_major_redesign.sql",
 	}
 
 	for _, migrationPath := range migrationFiles {

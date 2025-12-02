@@ -154,7 +154,7 @@ func (r *ProposalRepository) GetAll(limit, offset int) ([]*models.Proposal, erro
 func (r *ProposalRepository) GetAllWithUser(limit, offset int) ([]*models.ProposalWithUser, error) {
 	query := `
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status,
-		       user_telegram_id, telegram_username, phone_number, child_name, child_class
+		       telegram_username, phone_number, language
 		FROM v_proposals_with_user
 		LIMIT $1 OFFSET $2
 	`
@@ -176,11 +176,9 @@ func (r *ProposalRepository) GetAllWithUser(limit, offset int) ([]*models.Propos
 			&proposal.Filename,
 			&proposal.CreatedAt,
 			&proposal.Status,
-			&proposal.UserTelegramID,
 			&proposal.TelegramUsername,
 			&proposal.PhoneNumber,
-			&proposal.ChildName,
-			&proposal.ChildClass,
+			&proposal.Language,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan proposal with user: %w", err)

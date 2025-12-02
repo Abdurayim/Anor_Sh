@@ -154,7 +154,7 @@ func (r *ComplaintRepository) GetAll(limit, offset int) ([]*models.Complaint, er
 func (r *ComplaintRepository) GetAllWithUser(limit, offset int) ([]*models.ComplaintWithUser, error) {
 	query := `
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status,
-		       user_telegram_id, telegram_username, phone_number, child_name, child_class
+		       user_telegram_id, telegram_username, phone_number, language
 		FROM v_complaints_with_user
 		LIMIT $1 OFFSET $2
 	`
@@ -179,8 +179,7 @@ func (r *ComplaintRepository) GetAllWithUser(limit, offset int) ([]*models.Compl
 			&complaint.UserTelegramID,
 			&complaint.TelegramUsername,
 			&complaint.PhoneNumber,
-			&complaint.ChildName,
-			&complaint.ChildClass,
+			&complaint.Language,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan complaint with user: %w", err)

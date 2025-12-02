@@ -58,6 +58,24 @@ func RouteByState(botService *services.BotService, message *tgbotapi.Message, st
 	case models.StateAwaitingEditedAnnouncementContent:
 		return HandleEditedAnnouncementContent(botService, message, stateData)
 
+	case "awaiting_student_info":
+		return HandleStudentInfo(botService, message, stateData)
+
+	case "awaiting_link_info":
+		return HandleLinkInfo(botService, message, stateData)
+
+	case "awaiting_parent_phone_for_view":
+		return HandleParentPhoneForView(botService, message, stateData)
+
+	case "awaiting_teacher_info":
+		return HandleTeacherInfo(botService, message, stateData)
+
+	case "awaiting_test_result_info":
+		return HandleTestResultInfo(botService, message, stateData)
+
+	case "awaiting_attendance_info":
+		return HandleAttendanceInfo(botService, message, stateData)
+
 	case models.StateRegistered:
 		// User is registered, get user data
 		user, err := botService.UserService.GetUserByTelegramID(message.From.ID)
@@ -120,6 +138,21 @@ func HandleRegisteredUserMessage(botService *services.BotService, message *tgbot
 		return HandleSettingsCommand(botService, message)
 	}
 
+	// My children button (check both languages)
+	if buttonText == "👨‍👩‍👧‍👦 Mening farzandlarim" || buttonText == "👨‍👩‍👧‍👦 Мои дети" {
+		return HandleMyChildrenCommand(botService, message)
+	}
+
+	// Test results button (check both languages)
+	if buttonText == "📝 Baholar" || buttonText == "📝 Оценки" {
+		return HandleViewTestResultsCommand(botService, message, user)
+	}
+
+	// Attendance button (check both languages)
+	if buttonText == "📋 Yo'qlama" || buttonText == "📋 Посещаемость" {
+		return HandleViewAttendanceCommand(botService, message, user)
+	}
+
 	// Default: show main menu
 	text := i18n.Get(i18n.MsgMainMenu, lang)
 
@@ -137,6 +170,11 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	// Language selection
 	if data == "lang_uz" || data == "lang_ru" {
 		return HandleLanguageSelection(botService, callback)
+	}
+
+	// Child selection (for parents with multiple children)
+	if len(data) > 13 && data[:13] == "select_child_" {
+		return HandleChildSelectionCallback(botService, callback)
 	}
 
 	// Class delete callback (MUST be checked BEFORE generic "class_" check)
@@ -262,6 +300,20 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	// Admin back button
 	if data == "admin_back" {
 		return HandleAdminBackCallback(botService, callback)
+	}
+
+	// View class grades callback
+	if len(data) > 17 && data[:17] == "view_grades_class_" {
+		var classID int
+		fmt.Sscanf(data, "view_grades_class_%d", &classID)
+		return HandleViewClassGradesCallback(botService, callback, classID)
+	}
+
+	// View class attendance callback
+	if len(data) > 22 && data[:22] == "view_attendance_class_" {
+		var classID int
+		fmt.Sscanf(data, "view_attendance_class_%d", &classID)
+		return HandleViewClassAttendanceCallback(botService, callback, classID)
 	}
 
 	// Unknown callback

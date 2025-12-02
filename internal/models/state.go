@@ -16,6 +16,8 @@ type UserState struct {
 // StateData is a helper struct for storing state data
 type StateData struct {
 	PhoneNumber       string `json:"phone_number,omitempty"`
+	// ChildName and ChildClass are deprecated - students are now managed separately
+	// Kept for backward compatibility with old state data
 	ChildName         string `json:"child_name,omitempty"`
 	ChildClass        string `json:"child_class,omitempty"`
 	Language          string `json:"language,omitempty"`
@@ -32,6 +34,7 @@ const (
 	StateStart               = "start"
 	StateAwaitingLanguage    = "awaiting_language"
 	StateAwaitingPhone       = "awaiting_phone"
+	// DEPRECATED: Child name/class are no longer collected during registration
 	StateAwaitingChildName   = "awaiting_child_name"
 	StateAwaitingChildClass  = "awaiting_child_class"
 	StateRegistered          = "registered"
