@@ -219,11 +219,11 @@ END;
 -- JUNCTION TABLES (Many-to-Many Relationships)
 -- ============================================================================
 
--- Parent-Student Junction (Max 4 children per parent)
+-- Parent-Student Junction (Max 4 children per parent, ONE parent per student)
 CREATE TABLE parent_students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     parent_id INTEGER NOT NULL,
-    student_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL UNIQUE, -- Each student can only have ONE parent
     linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
@@ -233,12 +233,12 @@ CREATE TABLE parent_students (
 CREATE INDEX idx_parent_students_parent ON parent_students(parent_id);
 CREATE INDEX idx_parent_students_student ON parent_students(student_id);
 
--- Trigger to enforce max 4 children per parent
+-- Trigger to enforce max 5 children per parent
 CREATE TRIGGER enforce_max_children
 BEFORE INSERT ON parent_students
-WHEN (SELECT COUNT(*) FROM parent_students WHERE parent_id = NEW.parent_id) >= 4
+WHEN (SELECT COUNT(*) FROM parent_students WHERE parent_id = NEW.parent_id) >= 5
 BEGIN
-    SELECT RAISE(ABORT, 'Maximum of 4 children allowed per parent');
+    SELECT RAISE(ABORT, 'Maximum of 5 children allowed per parent');
 END;
 
 -- Teacher-Class Junction (Teachers can manage multiple classes)

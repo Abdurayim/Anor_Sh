@@ -269,10 +269,10 @@ func HandleLinkInfo(botService *services.BotService, message *tgbotapi.Message, 
 		}
 	}
 
-	// Check max children limit (4)
-	if len(existingLinks) >= 4 {
-		text := "❌ Bir ota-ona maksimal 4 ta farzandni bog'lash mumkin.\n\n" +
-			"❌ Родитель может привязать максимум 4 детей."
+	// Check max children limit (5)
+	if len(existingLinks) >= 5 {
+		text := "❌ Bir ota-ona maksimal 5 ta farzandni bog'lash mumkin.\n\n" +
+			"❌ Родитель может привязать максимум 5 детей."
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
@@ -280,6 +280,14 @@ func HandleLinkInfo(botService *services.BotService, message *tgbotapi.Message, 
 	err = botService.StudentRepo.LinkToParent(parent.ID, studentID)
 	if err != nil {
 		log.Printf("Failed to link student to parent: %v", err)
+		// Check if it's a UNIQUE constraint violation (student already linked to another parent)
+		if strings.Contains(err.Error(), "UNIQUE") {
+			text := "❌ Bu o'quvchi allaqachon boshqa ota-onaga bog'langan!\n" +
+				"Bir o'quvchi faqat BITTA ota-onaga tegishli bo'lishi mumkin.\n\n" +
+				"❌ Этот ученик уже привязан к другому родителю!\n" +
+				"Один ученик может принадлежать только ОДНОМУ родителю."
+			return botService.TelegramService.SendMessage(chatID, text, nil)
+		}
 		text := "❌ Bog'lashda xatolik / Ошибка при привязке"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}

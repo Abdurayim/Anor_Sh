@@ -11,7 +11,8 @@ This migration implements a complete architectural redesign that separates stude
 - **After**: Students are separate entities managed by admins/teachers and linked to parents
 
 ### 2. **Multi-Child Support**
-- Parents can now have up to **4 children** linked to their account
+- Parents can now have up to **5 children** linked to their account
+- **IMPORTANT:** Each student can only be linked to ONE parent (not multiple parents)
 - Parents select which child to view information for
 
 ### 3. **New Roles**
@@ -31,7 +32,7 @@ This migration implements a complete architectural redesign that separates stude
 
 1. **teachers** - Teacher accounts with phone-based authentication
 2. **students** - Student records (independent of parents)
-3. **parent_students** - Junction table linking parents to students (max 4 per parent)
+3. **parent_students** - Junction table linking parents to students (max 5 per parent, ONE parent per student)
 4. **teacher_classes** - Junction table for teacher-class assignments
 5. **announcement_classes** - Junction table for multi-class announcements
 6. **test_results** - Student test scores
@@ -230,7 +231,7 @@ Bot: ✅ Child selected
 - [ ] End-to-end test: Admin links student to parent
 - [ ] End-to-end test: Parent selects between children
 - [ ] End-to-end test: Parent views timetable for selected child
-- [ ] Test max constraints (4 children per parent, 3 admins)
+- [ ] Test max constraints (5 children per parent, 3 admins)
 
 ## Security Considerations
 
@@ -269,7 +270,7 @@ Bot: ✅ Child selected
 - **Cause**: Student ID doesn't exist
 - **Solution**: Use `/list_students` to get correct IDs
 
-### Issue: "Maximum 4 children allowed"
+### Issue: "Maximum 5 children allowed"
 - **Cause**: Parent already has 4 children linked
 - **Solution**: Remove a child before adding new one (admin operation)
 
