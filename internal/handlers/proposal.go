@@ -31,18 +31,61 @@ func HandleProposalCommand(botService *services.BotService, message *tgbotapi.Me
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Set state to awaiting proposal
-	stateData := &models.StateData{
-		Language: user.Language,
-	}
-	err = botService.StateManager.Set(telegramID, models.StateAwaitingProposal, stateData)
+	// Get parent's children
+	children, err := botService.StudentRepo.GetParentStudents(user.ID)
 	if err != nil {
 		return err
 	}
 
-	// Send request message
-	text := i18n.Get(i18n.MsgRequestProposal, lang)
-	return botService.TelegramService.SendMessage(chatID, text, nil)
+	if len(children) == 0 {
+		text := "⚠️ Sizda hali bog'langan farzand yo'q.\n\n⚠️ У вас еще нет привязанных детей."
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// If only one child, use that child automatically
+	if len(children) == 1 {
+		stateData := &models.StateData{
+			Language:          user.Language,
+			SelectedStudentID: &children[0].StudentID,
+		}
+		err = botService.StateManager.Set(telegramID, models.StateAwaitingProposal, stateData)
+		if err != nil {
+			return err
+		}
+
+		text := i18n.Get(i18n.MsgRequestProposal, lang)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Multiple children - show selection
+	text := "👨‍👩‍👧‍👦 <b>Taklifni qaysi farzandingiz uchun yozmoqchisiz?</b>\n\n" +
+		"👨‍👩‍👧‍👦 <b>На какого ребенка хотите написать предложение?</b>"
+
+	var buttons [][]tgbotapi.InlineKeyboardButton
+	for _, child := range children {
+		button := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("%s %s (%s)", child.StudentFirstName, child.StudentLastName, child.ClassName),
+			fmt.Sprintf("proposal_select_child_%d", child.StudentID),
+		)
+		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button})
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+
+	// Set state to selecting child for proposal
+	stateData := &models.StateData{
+		Language: user.Language,
+	}
+	err = botService.StateManager.Set(telegramID, "selecting_child_for_proposal", stateData)
+	if err != nil {
+		return err
+	}
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+	_, err = botService.Bot.Send(msg)
+	return err
 }
 
 // HandleProposalText handles proposal text input
@@ -139,10 +182,10 @@ func HandleProposalConfirmation(botService *services.BotService, callback *tgbot
 	// Answer callback query
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅")
 
-	// Get current selected student
+	// Get selected student from state data
 	var student *models.StudentWithClass
-	if user.CurrentSelectedStudentID != nil {
-		student, err = botService.StudentService.GetStudentByIDWithClass(*user.CurrentSelectedStudentID)
+	if stateData.SelectedStudentID != nil {
+		student, err = botService.StudentService.GetStudentByIDWithClass(*stateData.SelectedStudentID)
 		if err != nil || student == nil {
 			log.Printf("Failed to get student: %v", err)
 			text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
@@ -276,9 +319,11 @@ func notifyAdminsWithProposalDocument(botService *services.BotService, user *mod
 
 // HandleMyProposalsCommand shows user's proposal history
 func HandleMyProposalsCommand(botService *services.BotService, message *tgbotapi.Message) error {
-	telegramID := message.From.ID
-	chatID := message.Chat.ID
+	return handleProposalsPage(botService, message.From.ID, message.Chat.ID, 0)
+}
 
+// handleProposalsPage shows proposals with pagination
+func handleProposalsPage(botService *services.BotService, telegramID int64, chatID int64, offset int) error {
 	// Get user
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
 	if err != nil {
@@ -293,20 +338,23 @@ func HandleMyProposalsCommand(botService *services.BotService, message *tgbotapi
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get user proposals
-	proposals, err := botService.ProposalService.GetUserProposals(user.ID, 10, 0)
+	// Get user proposals with pagination (10 per page)
+	const pageSize = 10
+	proposals, err := botService.ProposalService.GetUserProposals(user.ID, pageSize, offset)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	if len(proposals) == 0 {
+	if len(proposals) == 0 && offset == 0 {
 		text := "Sizda hali takliflar yo'q / У вас пока нет предложений"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Format proposals list
-	text := "💡 Sizning takliflaringiz / Ваши предложения:\n\n"
+	currentPage := (offset / pageSize) + 1
+	text := fmt.Sprintf("💡 Sizning takliflaringiz / Ваши предложения (sahifa %d):\n\n", currentPage)
+
 	for i, p := range proposals {
 		status := "⏳"
 		if p.Status == models.StatusReviewed {
@@ -315,12 +363,119 @@ func HandleMyProposalsCommand(botService *services.BotService, message *tgbotapi
 
 		preview := utils.TruncateText(p.ProposalText, 50)
 		text += fmt.Sprintf("%d. %s %s\n   📅 %s\n\n",
-			i+1,
+			offset+i+1,
 			status,
 			preview,
 			utils.FormatDateTime(p.CreatedAt),
 		)
 	}
 
+	// Add pagination buttons if needed
+	var buttons [][]tgbotapi.InlineKeyboardButton
+	var row []tgbotapi.InlineKeyboardButton
+
+	// Previous button
+	if offset > 0 {
+		prevOffset := offset - pageSize
+		if prevOffset < 0 {
+			prevOffset = 0
+		}
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(
+			"◀️ Oldingi / Предыдущая",
+			fmt.Sprintf("proposals_page_%d", prevOffset),
+		))
+	}
+
+	// Next button (show if we got full page)
+	if len(proposals) == pageSize {
+		nextOffset := offset + pageSize
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(
+			"Keyingi / Следующая ▶️",
+			fmt.Sprintf("proposals_page_%d", nextOffset),
+		))
+	}
+
+	if len(row) > 0 {
+		buttons = append(buttons, row)
+	}
+
+	if len(buttons) > 0 {
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ReplyMarkup = keyboard
+		_, err = botService.Bot.Send(msg)
+		return err
+	}
+
+	return botService.TelegramService.SendMessage(chatID, text, nil)
+}
+
+// HandleProposalsPageCallback handles pagination for proposals
+func HandleProposalsPageCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery, offset int) error {
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	// Delete old message
+	deleteMsg := tgbotapi.NewDeleteMessage(callback.Message.Chat.ID, callback.Message.MessageID)
+	_, _ = botService.Bot.Request(deleteMsg)
+
+	// Show new page
+	return handleProposalsPage(botService, callback.From.ID, callback.Message.Chat.ID, offset)
+}
+
+// HandleProposalSelectChildCallback handles child selection for proposal
+func HandleProposalSelectChildCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery, studentID int) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	// Get user
+	user, err := botService.UserService.GetUserByTelegramID(telegramID)
+	if err != nil || user == nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik")
+		return nil
+	}
+
+	lang := i18n.GetLanguage(user.Language)
+
+	// Verify student belongs to parent
+	children, err := botService.StudentRepo.GetParentStudents(user.ID)
+	if err != nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik")
+		return nil
+	}
+
+	found := false
+	for _, child := range children {
+		if child.StudentID == studentID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		text := "❌ Bu farzand sizga tegishli emas / Этот ребенок вам не принадлежит"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
+		return nil
+	}
+
+	// Set state with selected student
+	stateData := &models.StateData{
+		Language:          user.Language,
+		SelectedStudentID: &studentID,
+	}
+	err = botService.StateManager.Set(telegramID, models.StateAwaitingProposal, stateData)
+	if err != nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik")
+		return nil
+	}
+
+	// Answer callback
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅")
+
+	// Delete the selection message
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+	_, _ = botService.Bot.Request(deleteMsg)
+
+	// Send request for proposal text
+	text := i18n.Get(i18n.MsgRequestProposal, lang)
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }

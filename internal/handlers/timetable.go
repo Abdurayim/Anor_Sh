@@ -29,15 +29,50 @@ func HandleViewTimetableCommand(botService *services.BotService, message *tgbota
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Check if user has a selected student
-	if user.CurrentSelectedStudentID == nil {
-		text := "Iltimos, farzandingizni tanlang yoki ma'muriyatga murojaat qiling.\n" +
-			"Пожалуйста, выберите вашего ребенка или обратитесь к администрации."
+	// Get parent's children
+	children, err := botService.StudentRepo.GetParentStudents(user.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(children) == 0 {
+		text := "⚠️ Sizda hali bog'langan farzand yo'q.\n\n⚠️ У вас еще нет привязанных детей."
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// Get student information to find their class
-	student, err := botService.StudentRepo.GetByID(*user.CurrentSelectedStudentID)
+	// If multiple children, show selection
+	if len(children) > 1 {
+		text := "📅 <b>Dars jadvali / Расписание уроков</b>\n\n" +
+			"Qaysi farzandingiz jadvalini ko'rmoqchisiz?\n" +
+			"Расписание какого ребенка хотите посмотреть?"
+
+		var buttons [][]tgbotapi.InlineKeyboardButton
+		for _, child := range children {
+			buttonText := fmt.Sprintf("%s %s (%s)", child.StudentLastName, child.StudentFirstName, child.ClassName)
+			button := tgbotapi.NewInlineKeyboardButtonData(
+				buttonText,
+				fmt.Sprintf("timetable_child_%d", child.StudentID),
+			)
+			buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button})
+		}
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ParseMode = "HTML"
+		msg.ReplyMarkup = keyboard
+
+		_, err = botService.Bot.Send(msg)
+		return err
+	}
+
+	// Single child - show timetable directly
+	return showTimetableForStudent(botService, chatID, children[0].StudentID, lang)
+}
+
+// showTimetableForStudent displays timetable for a specific student
+func showTimetableForStudent(botService *services.BotService, chatID int64, studentID int, lang i18n.Language) error {
+	student, err := botService.StudentRepo.GetByID(studentID)
 	if err != nil || student == nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -63,8 +98,48 @@ func HandleViewTimetableCommand(botService *services.BotService, message *tgbota
 	}
 
 	// Send timetable file
-	caption := fmt.Sprintf("📅 Dars jadvali / Расписание уроков\nSinf / Класс: %s", class.ClassName)
+	caption := fmt.Sprintf("📅 Dars jadvali / Расписание уроков\nSinf / Класс: %s\nO'quvchi / Ученик: %s %s",
+		class.ClassName, student.LastName, student.FirstName)
 	return botService.TelegramService.SendDocumentByFileID(chatID, timetable.TelegramFileID, caption)
+}
+
+// HandleTimetableChildSelection handles child selection for timetable view
+func HandleTimetableChildSelection(botService *services.BotService, callback *tgbotapi.CallbackQuery, studentID int) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	// Get user
+	user, err := botService.UserService.GetUserByTelegramID(telegramID)
+	if err != nil || user == nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik / Ошибка")
+		return nil
+	}
+
+	lang := i18n.GetLanguage(user.Language)
+
+	// Verify student belongs to this parent
+	children, err := botService.StudentRepo.GetParentStudents(user.ID)
+	if err != nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik / Ошибка")
+		return nil
+	}
+
+	studentBelongsToParent := false
+	for _, child := range children {
+		if child.StudentID == studentID {
+			studentBelongsToParent = true
+			break
+		}
+	}
+
+	if !studentBelongsToParent {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Bu farzand sizga tegishli emas")
+		return nil
+	}
+
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	return showTimetableForStudent(botService, chatID, studentID, lang)
 }
 
 // HandleUploadTimetableCommand initiates timetable upload (admin only)
@@ -157,7 +232,7 @@ func HandleTimetableClassSelection(botService *services.BotService, callback *tg
 	// Save class ID in state
 	stateData := &models.StateData{
 		Language: langStr,
-		ClassID:  classID,
+		ClassID:  &classID,
 	}
 	err = botService.StateManager.Set(telegramID, models.StateAwaitingTimetableFile, stateData)
 	if err != nil {
@@ -212,7 +287,7 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 
 	// Create timetable record
 	timetableReq := &models.CreateTimetableRequest{
-		ClassID:           stateData.ClassID,
+		ClassID:           *stateData.ClassID,
 		TelegramFileID:    fileID,
 		Filename:          filename,
 		FileType:          fileType,

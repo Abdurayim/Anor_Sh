@@ -19,7 +19,7 @@ func NewAdminRepository(db *sql.DB) *AdminRepository {
 func (r *AdminRepository) Create(phoneNumber, name string) (*models.Admin, error) {
 	query := `
 		INSERT INTO admins (phone_number, name)
-		VALUES ($1, $2)
+		VALUES (?, ?)
 		RETURNING id, phone_number, telegram_id, name, added_at
 	`
 
@@ -44,7 +44,7 @@ func (r *AdminRepository) GetByPhoneNumber(phoneNumber string) (*models.Admin, e
 	query := `
 		SELECT id, phone_number, telegram_id, name, added_at
 		FROM admins
-		WHERE phone_number = $1
+		WHERE phone_number = ?
 	`
 
 	var admin models.Admin
@@ -72,7 +72,7 @@ func (r *AdminRepository) GetByTelegramID(telegramID int64) (*models.Admin, erro
 	query := `
 		SELECT id, phone_number, telegram_id, name, added_at
 		FROM admins
-		WHERE telegram_id = $1
+		WHERE telegram_id = ?
 	`
 
 	var admin models.Admin
@@ -130,7 +130,7 @@ func (r *AdminRepository) GetAll() ([]*models.Admin, error) {
 
 // UpdateTelegramID updates admin telegram ID
 func (r *AdminRepository) UpdateTelegramID(phoneNumber string, telegramID int64) error {
-	query := `UPDATE admins SET telegram_id = $1 WHERE phone_number = $2`
+	query := `UPDATE admins SET telegram_id = ? WHERE phone_number = ?`
 	_, err := r.db.Exec(query, telegramID, phoneNumber)
 	if err != nil {
 		return fmt.Errorf("failed to update admin telegram ID: %w", err)
@@ -150,7 +150,7 @@ func (r *AdminRepository) IsAdmin(phoneNumber string, telegramID int64) (bool, e
 		query = `
 			SELECT EXISTS(
 				SELECT 1 FROM admins
-				WHERE phone_number = $1 OR telegram_id = $2
+				WHERE phone_number = ? OR telegram_id = ?
 			)
 		`
 		args = []any{phoneNumber, telegramID}
@@ -159,7 +159,7 @@ func (r *AdminRepository) IsAdmin(phoneNumber string, telegramID int64) (bool, e
 		query = `
 			SELECT EXISTS(
 				SELECT 1 FROM admins
-				WHERE phone_number = $1
+				WHERE phone_number = ?
 			)
 		`
 		args = []any{phoneNumber}
@@ -168,7 +168,7 @@ func (r *AdminRepository) IsAdmin(phoneNumber string, telegramID int64) (bool, e
 		query = `
 			SELECT EXISTS(
 				SELECT 1 FROM admins
-				WHERE telegram_id = $1
+				WHERE telegram_id = ?
 			)
 		`
 		args = []any{telegramID}
@@ -198,7 +198,7 @@ func (r *AdminRepository) Count() (int, error) {
 
 // Delete deletes an admin by phone number
 func (r *AdminRepository) Delete(phoneNumber string) error {
-	query := `DELETE FROM admins WHERE phone_number = $1`
+	query := `DELETE FROM admins WHERE phone_number = ?`
 	_, err := r.db.Exec(query, phoneNumber)
 	if err != nil {
 		return fmt.Errorf("failed to delete admin: %w", err)

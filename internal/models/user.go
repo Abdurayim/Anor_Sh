@@ -4,13 +4,12 @@ import "time"
 
 // User represents a registered parent user
 type User struct {
-	ID                      int       `json:"id" db:"id"`
-	TelegramID              int64     `json:"telegram_id" db:"telegram_id"`
-	TelegramUsername        string    `json:"telegram_username" db:"telegram_username"`
-	PhoneNumber             string    `json:"phone_number" db:"phone_number"`
-	Language                string    `json:"language" db:"language"`
-	CurrentSelectedStudentID *int      `json:"current_selected_student_id" db:"current_selected_student_id"`
-	RegisteredAt            time.Time `json:"registered_at" db:"registered_at"`
+	ID               int       `json:"id" db:"id"`
+	TelegramID       int64     `json:"telegram_id" db:"telegram_id"`
+	TelegramUsername string    `json:"telegram_username" db:"telegram_username"`
+	PhoneNumber      string    `json:"phone_number" db:"phone_number"`
+	Language         string    `json:"language" db:"language"`
+	RegisteredAt     time.Time `json:"registered_at" db:"registered_at"`
 }
 
 // CreateUserRequest is the request to create a new user
@@ -23,8 +22,7 @@ type CreateUserRequest struct {
 
 // UpdateUserRequest is the request to update user data
 type UpdateUserRequest struct {
-	Language                string `json:"language,omitempty" validate:"omitempty,oneof=uz ru"`
-	CurrentSelectedStudentID *int   `json:"current_selected_student_id,omitempty"`
+	Language string `json:"language,omitempty" validate:"omitempty,oneof=uz ru"`
 }
 
 // ParentStudent represents the junction table linking parents to students

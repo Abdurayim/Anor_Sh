@@ -35,10 +35,10 @@ func (r *TeacherRepository) Create(firstName, lastName, phoneNumber, language st
 func (r *TeacherRepository) UpdateTelegramID(teacherID int, telegramID int64, username string) error {
 	query := `
 		UPDATE teachers
-		SET telegram_id = ?, registered_at = CURRENT_TIMESTAMP
+		SET telegram_id = ?, telegram_username = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`
-	_, err := r.db.Exec(query, telegramID, teacherID)
+	_, err := r.db.Exec(query, telegramID, username, teacherID)
 	return err
 }
 
@@ -46,7 +46,7 @@ func (r *TeacherRepository) UpdateTelegramID(teacherID int, telegramID int64, us
 func (r *TeacherRepository) GetByID(id int) (*models.Teacher, error) {
 	query := `
 		SELECT id, phone_number, telegram_id, first_name, last_name, language,
-		       is_active, added_by_admin_id, registered_at, created_at
+		       is_active, added_by_admin_id, created_at
 		FROM teachers
 		WHERE id = ?
 	`
@@ -60,7 +60,6 @@ func (r *TeacherRepository) GetByID(id int) (*models.Teacher, error) {
 		&teacher.Language,
 		&teacher.IsActive,
 		&teacher.AddedByAdminID,
-		&teacher.RegisteredAt,
 		&teacher.CreatedAt,
 	)
 	if err != nil {
@@ -74,7 +73,7 @@ func (r *TeacherRepository) GetByID(id int) (*models.Teacher, error) {
 func (r *TeacherRepository) GetByPhoneNumber(phoneNumber string) (*models.Teacher, error) {
 	query := `
 		SELECT id, phone_number, telegram_id, first_name, last_name, language,
-		       is_active, added_by_admin_id, registered_at, created_at
+		       is_active, added_by_admin_id, created_at
 		FROM teachers
 		WHERE phone_number = ?
 	`
@@ -88,7 +87,6 @@ func (r *TeacherRepository) GetByPhoneNumber(phoneNumber string) (*models.Teache
 		&teacher.Language,
 		&teacher.IsActive,
 		&teacher.AddedByAdminID,
-		&teacher.RegisteredAt,
 		&teacher.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -110,7 +108,7 @@ func (r *TeacherRepository) GetByPhone(phoneNumber string) (*models.Teacher, err
 func (r *TeacherRepository) GetByTelegramID(telegramID int64) (*models.Teacher, error) {
 	query := `
 		SELECT id, phone_number, telegram_id, first_name, last_name, language,
-		       is_active, added_by_admin_id, registered_at, created_at
+		       is_active, added_by_admin_id, created_at
 		FROM teachers
 		WHERE telegram_id = ?
 	`
@@ -124,7 +122,6 @@ func (r *TeacherRepository) GetByTelegramID(telegramID int64) (*models.Teacher, 
 		&teacher.Language,
 		&teacher.IsActive,
 		&teacher.AddedByAdminID,
-		&teacher.RegisteredAt,
 		&teacher.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -141,7 +138,7 @@ func (r *TeacherRepository) GetByTelegramID(telegramID int64) (*models.Teacher, 
 func (r *TeacherRepository) LinkTelegramID(phoneNumber string, telegramID int64, language string) error {
 	query := `
 		UPDATE teachers
-		SET telegram_id = ?, language = ?, registered_at = CURRENT_TIMESTAMP
+		SET telegram_id = ?, language = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE phone_number = ?
 	`
 	_, err := r.db.Exec(query, telegramID, language, phoneNumber)
@@ -173,7 +170,7 @@ func (r *TeacherRepository) Delete(id int) error {
 func (r *TeacherRepository) GetAll(limit, offset int) ([]*models.Teacher, error) {
 	query := `
 		SELECT id, phone_number, telegram_id, first_name, last_name, language,
-		       is_active, added_by_admin_id, registered_at, created_at
+		       is_active, added_by_admin_id, created_at
 		FROM teachers
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -196,7 +193,6 @@ func (r *TeacherRepository) GetAll(limit, offset int) ([]*models.Teacher, error)
 			&teacher.Language,
 			&teacher.IsActive,
 			&teacher.AddedByAdminID,
-			&teacher.RegisteredAt,
 			&teacher.CreatedAt,
 		)
 		if err != nil {
@@ -212,7 +208,7 @@ func (r *TeacherRepository) GetAll(limit, offset int) ([]*models.Teacher, error)
 func (r *TeacherRepository) GetActiveTeachers() ([]*models.Teacher, error) {
 	query := `
 		SELECT id, phone_number, telegram_id, first_name, last_name, language,
-		       is_active, added_by_admin_id, registered_at, created_at
+		       is_active, added_by_admin_id, created_at
 		FROM teachers
 		WHERE is_active = 1
 		ORDER BY last_name, first_name
@@ -235,7 +231,6 @@ func (r *TeacherRepository) GetActiveTeachers() ([]*models.Teacher, error) {
 			&teacher.Language,
 			&teacher.IsActive,
 			&teacher.AddedByAdminID,
-			&teacher.RegisteredAt,
 			&teacher.CreatedAt,
 		)
 		if err != nil {
@@ -301,7 +296,7 @@ func (r *TeacherRepository) GetTeacherClasses(teacherID int) ([]*models.Class, e
 func (r *TeacherRepository) GetClassTeachers(classID int) ([]*models.Teacher, error) {
 	query := `
 		SELECT t.id, t.phone_number, t.telegram_id, t.first_name, t.last_name,
-		       t.language, t.is_active, t.added_by_admin_id, t.registered_at, t.created_at
+		       t.language, t.is_active, t.added_by_admin_id, t.created_at
 		FROM teachers t
 		INNER JOIN teacher_classes tc ON t.id = tc.teacher_id
 		WHERE tc.class_id = ? AND t.is_active = 1
@@ -325,7 +320,6 @@ func (r *TeacherRepository) GetClassTeachers(classID int) ([]*models.Teacher, er
 			&teacher.Language,
 			&teacher.IsActive,
 			&teacher.AddedByAdminID,
-			&teacher.RegisteredAt,
 			&teacher.CreatedAt,
 		)
 		if err != nil {

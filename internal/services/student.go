@@ -209,33 +209,3 @@ func (s *StudentService) CanParentAddChild(parentID int) (bool, error) {
 	return count < 4, nil
 }
 
-// SetCurrentSelectedStudent sets the current selected student for a parent
-func (s *StudentService) SetCurrentSelectedStudent(parentID, studentID int) error {
-	// Verify student is linked to parent
-	isLinked, err := s.repo.IsStudentLinkedToParent(parentID, studentID)
-	if err != nil {
-		return err
-	}
-	if !isLinked {
-		return fmt.Errorf("student is not linked to this parent")
-	}
-
-	// Update user's current selected student
-	return s.userRepo.Update(parentID, &models.UpdateUserRequest{
-		CurrentSelectedStudentID: &studentID,
-	})
-}
-
-// GetCurrentSelectedStudent retrieves the current selected student for a parent
-func (s *StudentService) GetCurrentSelectedStudent(parentID int) (*models.StudentWithClass, error) {
-	user, err := s.userRepo.GetByID(parentID)
-	if err != nil {
-		return nil, err
-	}
-
-	if user.CurrentSelectedStudentID == nil {
-		return nil, fmt.Errorf("no student selected")
-	}
-
-	return s.repo.GetByIDWithClass(*user.CurrentSelectedStudentID)
-}

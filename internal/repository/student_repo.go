@@ -263,7 +263,7 @@ func (r *StudentRepository) UnlinkFromParent(parentID, studentID int) error {
 func (r *StudentRepository) GetStudentParents(studentID int) ([]*models.User, error) {
 	query := `
 		SELECT u.id, u.telegram_id, u.telegram_username, u.phone_number,
-		       u.language, u.current_selected_student_id, u.registered_at
+		       u.language, u.registered_at
 		FROM users u
 		INNER JOIN parent_students ps ON u.id = ps.parent_id
 		WHERE ps.student_id = ?
@@ -284,7 +284,6 @@ func (r *StudentRepository) GetStudentParents(studentID int) ([]*models.User, er
 			&user.TelegramUsername,
 			&user.PhoneNumber,
 			&user.Language,
-			&user.CurrentSelectedStudentID,
 			&user.RegisteredAt,
 		)
 		if err != nil {

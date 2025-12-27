@@ -112,6 +112,13 @@ var uzbek = map[string]string{
 	MsgCurrentChild:         "✅ Joriy farzand: %s %s (%s sinf)",
 	MsgSwitchChild:          "🔄 Farzandni almashtirish uchun tanlang:",
 	MsgChildSwitched:        "✅ Farzand almashtirildi: %s %s",
+	MsgMyKidsMenu:           "👨‍👩‍👧‍👦 Mening farzandlarim\n\nFarzandingizni tanlang yoki yangi qo'shing:",
+	MsgNoChildrenLinked:     "❌ Sizga hali hech qanday farzand bog'lanmagan.\n\nFarzandingizni qo'shish uchun quyidagi tugmani bosing:",
+	MsgChildInfo:            "👤 <b>%s %s</b>\n🎓 Sinf: %s",
+	MsgAddChildPrompt:       "👶 Farzand qo'shish uchun avval sinfni tanlang:",
+	MsgChildNotFound:        "❌ Farzand topilmadi.",
+	MsgChildAlreadyLinked:   "❌ Bu farzand allaqachon sizga bog'langan.",
+	MsgWaitForStudentAdd:    "⏳ Bu sinfda hali o'quvchilar yo'q.\n\nO'qituvchi yoki admin o'quvchi qo'shgandan so'ng, siz farzandingizni tanlashingiz mumkin.",
 
 	// Test results
 	MsgRequestSubjectName:  "📖 Fan nomini kiriting:\n\nMisol: Matematika, Fizika, Ingliz tili",
@@ -191,12 +198,14 @@ var uzbek = map[string]string{
 	BtnViewClassStudents: "👥 Sinf o'quvchilari",
 
 	// Parent buttons
-	BtnMyTestResults:    "📊 Mening natijalarim",
-	BtnMyAttendance:     "📋 Mening davomatim",
-	BtnMyChildren:       "👨‍👩‍👧‍👦 Mening farzandlarim",
-	BtnAddAnotherChild:  "➕ Boshqa farzand qo'shish",
-	BtnSwitchChild:      "🔄 Farzandni almashtirish",
-	BtnFinishAttendance: "✅ Tugatish",
+	BtnMyTestResults:        "📊 Mening natijalarim",
+	BtnMyAttendance:         "📋 Mening davomatim",
+	BtnMyChildren:           "👨‍👩‍👧‍👦 Mening farzandlarim",
+	BtnAddAnotherChild:      "➕ Boshqa farzand qo'shish",
+	BtnSwitchChild:          "🔄 Farzandni almashtirish",
+	BtnFinishAttendance:     "✅ Tugatish",
+	BtnViewChildAttendance:  "📋 Davomat",
+	BtnViewChildTestResults: "📊 Baholar",
 
 	// Errors
 	ErrInvalidPhone:      "❌ Noto'g'ri telefon raqam formati!\n\nTelefon raqam +998 bilan boshlanishi va 9 ta raqamdan iborat bo'lishi kerak.\n\nMisol: +998901234567",

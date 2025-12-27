@@ -96,6 +96,13 @@ const (
 	MsgCurrentChild           = "current_child"
 	MsgSwitchChild            = "switch_child"
 	MsgChildSwitched          = "child_switched"
+	MsgMyKidsMenu             = "my_kids_menu"
+	MsgNoChildrenLinked       = "no_children_linked"
+	MsgChildInfo              = "child_info"
+	MsgAddChildPrompt         = "add_child_prompt"
+	MsgChildNotFound          = "child_not_found"
+	MsgChildAlreadyLinked     = "child_already_linked"
+	MsgWaitForStudentAdd      = "wait_for_student_add"
 
 	// Test results
 	MsgRequestSubjectName     = "request_subject_name"
@@ -181,6 +188,8 @@ const (
 	BtnAddAnotherChild        = "btn_add_another_child"
 	BtnSwitchChild            = "btn_switch_child"
 	BtnFinishAttendance       = "btn_finish_attendance"
+	BtnViewChildAttendance    = "btn_view_child_attendance"
+	BtnViewChildTestResults   = "btn_view_child_test_results"
 
 	// Errors
 	ErrInvalidPhone           = "err_invalid_phone"

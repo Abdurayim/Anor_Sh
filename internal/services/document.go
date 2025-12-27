@@ -160,3 +160,113 @@ func (s *DocumentService) CleanTempDirectory(maxAge time.Duration) error {
 func (s *DocumentService) GetTempDir() string {
 	return s.tempDir
 }
+
+// GenerateClassTestResultsDocument generates a DOCX document for class test results
+func (s *DocumentService) GenerateClassTestResultsDocument(className string, results []*models.TestResultDetailed) (filePath, filename string, err error) {
+	// Generate filename
+	filename = fmt.Sprintf("Baholar_%s_%s.docx", className, time.Now().Format("2006-01-02"))
+
+	// Create full path
+	filePath = filepath.Join(s.tempDir, filename)
+
+	// Prepare test result data
+	testResults := make([]docx.TestResultData, 0)
+	for _, result := range results {
+		testResults = append(testResults, docx.TestResultData{
+			StudentName: fmt.Sprintf("%s %s", result.LastName, result.FirstName),
+			SubjectName: result.SubjectName,
+			Score:       result.Score,
+		})
+	}
+
+	data := &docx.ClassTestResultsData{
+		ClassName:   className,
+		Date:        time.Now(),
+		TestResults: testResults,
+	}
+
+	// Generate document
+	if err := docx.GenerateClassTestResults(data, filePath); err != nil {
+		return "", "", fmt.Errorf("failed to generate test results document: %w", err)
+	}
+
+	// Verify file was created and has content
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to verify generated file: %w", err)
+	}
+
+	if fileInfo.Size() == 0 {
+		return "", "", fmt.Errorf("generated file is empty")
+	}
+
+	fmt.Printf("[DEBUG] Test results document verified: %s, size: %d bytes\n", filename, fileInfo.Size())
+
+	return filePath, filename, nil
+}
+
+// GenerateTodayAttendanceDocument generates a DOCX document for today's attendance across all classes
+func (s *DocumentService) GenerateTodayAttendanceDocument(classesData []struct {
+	ClassName string
+	Records   []*models.AttendanceDetailed
+}) (filePath, filename string, err error) {
+	// Generate filename
+	filename = fmt.Sprintf("Yoqlama_%s.docx", time.Now().Format("2006-01-02"))
+
+	// Create full path
+	filePath = filepath.Join(s.tempDir, filename)
+
+	// Prepare attendance data
+	allClassesData := make([]docx.ClassAttendanceData, 0)
+
+	for _, classData := range classesData {
+		records := make([]docx.AttendanceRecord, 0)
+		presentCount := 0
+		absentCount := 0
+
+		for _, record := range classData.Records {
+			records = append(records, docx.AttendanceRecord{
+				StudentName: fmt.Sprintf("%s %s", record.LastName, record.FirstName),
+				Status:      record.Status,
+			})
+
+			if record.Status == "present" {
+				presentCount++
+			} else {
+				absentCount++
+			}
+		}
+
+		allClassesData = append(allClassesData, docx.ClassAttendanceData{
+			ClassName:         classData.ClassName,
+			Date:              time.Now(),
+			AttendanceRecords: records,
+			PresentCount:      presentCount,
+			AbsentCount:       absentCount,
+		})
+	}
+
+	data := &docx.AllClassesAttendanceData{
+		Date:        time.Now(),
+		ClassesData: allClassesData,
+	}
+
+	// Generate document
+	if err := docx.GenerateTodayAttendance(data, filePath); err != nil {
+		return "", "", fmt.Errorf("failed to generate attendance document: %w", err)
+	}
+
+	// Verify file was created and has content
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to verify generated file: %w", err)
+	}
+
+	if fileInfo.Size() == 0 {
+		return "", "", fmt.Errorf("generated file is empty")
+	}
+
+	fmt.Printf("[DEBUG] Attendance document verified: %s, size: %d bytes\n", filename, fileInfo.Size())
+
+	return filePath, filename, nil
+}

@@ -56,6 +56,11 @@ func (s *TestResultService) GetTestResultsByClassID(classID int, limit, offset i
 	return s.repo.GetByClassID(classID, limit, offset)
 }
 
+// GetTestResultsByClassIDAndDateRange retrieves test results for a class within a date range
+func (s *TestResultService) GetTestResultsByClassIDAndDateRange(classID int, startDate, endDate string, limit, offset int) ([]*models.TestResultDetailed, error) {
+	return s.repo.GetByClassIDAndDateRange(classID, startDate, endDate, limit, offset)
+}
+
 // GetAllTestResultsByClassID retrieves all test results for a class without pagination (for export)
 func (s *TestResultService) GetAllTestResultsByClassID(classID int) ([]*models.TestResultDetailed, error) {
 	return s.repo.GetAllByClassID(classID)

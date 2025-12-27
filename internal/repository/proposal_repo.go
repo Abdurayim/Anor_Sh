@@ -19,7 +19,7 @@ func NewProposalRepository(db *sql.DB) *ProposalRepository {
 func (r *ProposalRepository) Create(req *models.CreateProposalRequest) (*models.Proposal, error) {
 	query := `
 		INSERT INTO proposals (user_id, proposal_text, telegram_file_id, filename)
-		VALUES ($1, $2, $3, $4)
+		VALUES (?, ?, ?, ?)
 		RETURNING id, user_id, proposal_text, telegram_file_id, filename, created_at, status
 	`
 
@@ -52,7 +52,7 @@ func (r *ProposalRepository) GetByID(id int) (*models.Proposal, error) {
 	query := `
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status
 		FROM proposals
-		WHERE id = $1
+		WHERE id = ?
 	`
 
 	var proposal models.Proposal
@@ -82,9 +82,9 @@ func (r *ProposalRepository) GetByUserID(userID int, limit, offset int) ([]*mode
 	query := `
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status
 		FROM proposals
-		WHERE user_id = $1
+		WHERE user_id = ?
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, userID, limit, offset)
@@ -120,7 +120,7 @@ func (r *ProposalRepository) GetAll(limit, offset int) ([]*models.Proposal, erro
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status
 		FROM proposals
 		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -156,7 +156,7 @@ func (r *ProposalRepository) GetAllWithUser(limit, offset int) ([]*models.Propos
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status,
 		       telegram_username, phone_number, language
 		FROM v_proposals_with_user
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -194,9 +194,9 @@ func (r *ProposalRepository) GetByStatus(status string, limit, offset int) ([]*m
 	query := `
 		SELECT id, user_id, proposal_text, telegram_file_id, filename, created_at, status
 		FROM proposals
-		WHERE status = $1
+		WHERE status = ?
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, status, limit, offset)
@@ -228,7 +228,7 @@ func (r *ProposalRepository) GetByStatus(status string, limit, offset int) ([]*m
 
 // UpdateStatus updates proposal status
 func (r *ProposalRepository) UpdateStatus(id int, status string) error {
-	query := `UPDATE proposals SET status = $1 WHERE id = $2`
+	query := `UPDATE proposals SET status = ? WHERE id = ?`
 	_, err := r.db.Exec(query, status, id)
 	if err != nil {
 		return fmt.Errorf("failed to update proposal status: %w", err)
@@ -249,7 +249,7 @@ func (r *ProposalRepository) Count() (int, error) {
 // CountByStatus counts proposals by status
 func (r *ProposalRepository) CountByStatus(status string) (int, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM proposals WHERE status = $1`
+	query := `SELECT COUNT(*) FROM proposals WHERE status = ?`
 	err := r.db.QueryRow(query, status).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count proposals by status: %w", err)
@@ -260,7 +260,7 @@ func (r *ProposalRepository) CountByStatus(status string) (int, error) {
 // CountByUserID counts proposals by user ID
 func (r *ProposalRepository) CountByUserID(userID int) (int, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM proposals WHERE user_id = $1`
+	query := `SELECT COUNT(*) FROM proposals WHERE user_id = ?`
 	err := r.db.QueryRow(query, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count user proposals: %w", err)

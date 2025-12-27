@@ -36,9 +36,9 @@ func (m *Manager) Set(telegramID int64, state string, data *models.StateData) er
 
 	query := `
 		INSERT INTO user_states (telegram_id, state, data)
-		VALUES ($1, $2, $3)
+		VALUES (?, ?, ?)
 		ON CONFLICT (telegram_id)
-		DO UPDATE SET state = $2, data = $3, updated_at = CURRENT_TIMESTAMP
+		DO UPDATE SET state = excluded.state, data = excluded.data, updated_at = CURRENT_TIMESTAMP
 	`
 
 	_, err = m.db.Exec(query, telegramID, state, dataJSON)
@@ -71,7 +71,7 @@ func (m *Manager) Get(telegramID int64) (*models.UserState, error) {
 	query := `
 		SELECT telegram_id, state, data, updated_at
 		FROM user_states
-		WHERE telegram_id = $1
+		WHERE telegram_id = ?
 	`
 
 	var state models.UserState
@@ -123,7 +123,7 @@ func (m *Manager) Delete(telegramID int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	query := `DELETE FROM user_states WHERE telegram_id = $1`
+	query := `DELETE FROM user_states WHERE telegram_id = ?`
 	_, err := m.db.Exec(query, telegramID)
 	if err != nil {
 		return fmt.Errorf("failed to delete state: %w", err)

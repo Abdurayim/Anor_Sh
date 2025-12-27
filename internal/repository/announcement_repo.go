@@ -18,9 +18,9 @@ func NewAnnouncementRepository(db *sql.DB) *AnnouncementRepository {
 // Create creates a new announcement
 func (r *AnnouncementRepository) Create(req *models.CreateAnnouncementRequest) (*models.Announcement, error) {
 	query := `
-		INSERT INTO announcements (title, content, telegram_file_id, filename, file_type, posted_by_admin_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, title, content, telegram_file_id, filename, file_type, posted_by_admin_id, created_at, is_active
+		INSERT INTO announcements (title, content, telegram_file_id, filename, file_type, admin_id)
+		VALUES (?, ?, ?, ?, ?, ?)
+		RETURNING id, title, content, telegram_file_id, filename, file_type, admin_id, created_at, is_active
 	`
 
 	var announcement models.Announcement
@@ -54,9 +54,9 @@ func (r *AnnouncementRepository) Create(req *models.CreateAnnouncementRequest) (
 // GetByID gets announcement by ID
 func (r *AnnouncementRepository) GetByID(id int) (*models.Announcement, error) {
 	query := `
-		SELECT id, title, content, telegram_file_id, filename, file_type, posted_by_admin_id, created_at, is_active
+		SELECT id, title, content, telegram_file_id, filename, file_type, admin_id, teacher_id, created_at, is_active
 		FROM announcements
-		WHERE id = $1
+		WHERE id = ?
 	`
 
 	var announcement models.Announcement
@@ -68,6 +68,7 @@ func (r *AnnouncementRepository) GetByID(id int) (*models.Announcement, error) {
 		&announcement.Filename,
 		&announcement.FileType,
 		&announcement.PostedByAdminID,
+		&announcement.PostedByTeacherID,
 		&announcement.CreatedAt,
 		&announcement.IsActive,
 	)
@@ -86,11 +87,11 @@ func (r *AnnouncementRepository) GetByID(id int) (*models.Announcement, error) {
 // GetActive gets all active announcements with pagination
 func (r *AnnouncementRepository) GetActive(limit, offset int) ([]*models.Announcement, error) {
 	query := `
-		SELECT id, title, content, telegram_file_id, filename, file_type, posted_by_admin_id, created_at, is_active
+		SELECT id, title, content, telegram_file_id, filename, file_type, admin_id, teacher_id, created_at, is_active
 		FROM announcements
 		WHERE is_active = 1
 		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -110,6 +111,7 @@ func (r *AnnouncementRepository) GetActive(limit, offset int) ([]*models.Announc
 			&announcement.Filename,
 			&announcement.FileType,
 			&announcement.PostedByAdminID,
+			&announcement.PostedByTeacherID,
 			&announcement.CreatedAt,
 			&announcement.IsActive,
 		)
@@ -125,10 +127,10 @@ func (r *AnnouncementRepository) GetActive(limit, offset int) ([]*models.Announc
 // GetAll gets all announcements with pagination (for admin)
 func (r *AnnouncementRepository) GetAll(limit, offset int) ([]*models.Announcement, error) {
 	query := `
-		SELECT id, title, content, telegram_file_id, filename, file_type, posted_by_admin_id, created_at, is_active
+		SELECT id, title, content, telegram_file_id, filename, file_type, admin_id, teacher_id, created_at, is_active
 		FROM announcements
 		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -148,6 +150,7 @@ func (r *AnnouncementRepository) GetAll(limit, offset int) ([]*models.Announceme
 			&announcement.Filename,
 			&announcement.FileType,
 			&announcement.PostedByAdminID,
+			&announcement.PostedByTeacherID,
 			&announcement.CreatedAt,
 			&announcement.IsActive,
 		)
@@ -164,9 +167,9 @@ func (r *AnnouncementRepository) GetAll(limit, offset int) ([]*models.Announceme
 func (r *AnnouncementRepository) Update(id int, req *models.CreateAnnouncementRequest) (*models.Announcement, error) {
 	query := `
 		UPDATE announcements
-		SET title = $1, content = $2, telegram_file_id = $3, filename = $4, file_type = $5
-		WHERE id = $6
-		RETURNING id, title, content, telegram_file_id, filename, file_type, posted_by_admin_id, created_at, is_active
+		SET title = ?, content = ?, telegram_file_id = ?, filename = ?, file_type = ?
+		WHERE id = ?
+		RETURNING id, title, content, telegram_file_id, filename, file_type, admin_id, created_at, is_active
 	`
 
 	var announcement models.Announcement
@@ -199,7 +202,7 @@ func (r *AnnouncementRepository) Update(id int, req *models.CreateAnnouncementRe
 
 // ToggleActive toggles the active status of an announcement
 func (r *AnnouncementRepository) ToggleActive(id int) error {
-	query := `UPDATE announcements SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = $1`
+	query := `UPDATE announcements SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?`
 	_, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to toggle announcement active status: %w", err)
@@ -209,7 +212,7 @@ func (r *AnnouncementRepository) ToggleActive(id int) error {
 
 // Delete deletes an announcement
 func (r *AnnouncementRepository) Delete(id int) error {
-	query := `DELETE FROM announcements WHERE id = $1`
+	query := `DELETE FROM announcements WHERE id = ?`
 	_, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete announcement: %w", err)
@@ -236,4 +239,77 @@ func (r *AnnouncementRepository) CountActive() (int, error) {
 		return 0, fmt.Errorf("failed to count active announcements: %w", err)
 	}
 	return count, nil
+}
+
+// GetByTeacherID gets all announcements posted by a specific teacher
+func (r *AnnouncementRepository) GetByTeacherID(teacherID int, limit, offset int) ([]*models.AnnouncementWithClasses, error) {
+	query := `
+		SELECT
+			a.id, a.title, a.content, a.telegram_file_id, a.filename, a.file_type,
+			a.admin_id, a.teacher_id, a.created_at, a.is_active
+		FROM announcements a
+		WHERE a.teacher_id = ?
+		ORDER BY a.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, teacherID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get teacher announcements: %w", err)
+	}
+	defer rows.Close()
+
+	var announcements []*models.AnnouncementWithClasses
+	for rows.Next() {
+		var a models.AnnouncementWithClasses
+		err := rows.Scan(
+			&a.ID,
+			&a.Title,
+			&a.Content,
+			&a.TelegramFileID,
+			&a.Filename,
+			&a.FileType,
+			&a.PostedByAdminID,
+			&a.PostedByTeacherID,
+			&a.CreatedAt,
+			&a.IsActive,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan announcement: %w", err)
+		}
+
+		// Get associated classes
+		classQuery := `
+			SELECT ac.class_id, c.class_name
+			FROM announcement_classes ac
+			JOIN classes c ON ac.class_id = c.id
+			WHERE ac.announcement_id = ?
+			ORDER BY c.class_name
+		`
+		classRows, err := r.db.Query(classQuery, a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get announcement classes: %w", err)
+		}
+
+		var classIDs []int
+		var classNames []string
+		for classRows.Next() {
+			var classID int
+			var className string
+			if err := classRows.Scan(&classID, &className); err != nil {
+				classRows.Close()
+				return nil, fmt.Errorf("failed to scan class: %w", err)
+			}
+			classIDs = append(classIDs, classID)
+			classNames = append(classNames, className)
+		}
+		classRows.Close()
+
+		a.ClassIDs = classIDs
+		a.ClassNames = classNames
+
+		announcements = append(announcements, &a)
+	}
+
+	return announcements, nil
 }

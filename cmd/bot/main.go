@@ -38,22 +38,33 @@ func main() {
 	log.Println("✓ Temporary documents directory created")
 
 	// Run migrations (SQLite version)
-	// Migration 003 is a complete redesign that drops and recreates all tables
-	migrationFiles := []string{
-		"internal/database/migrations/003_major_redesign.sql",
+	// Only run migrations if database is new (check if admins table exists)
+	var tableExists bool
+	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='admins')").Scan(&tableExists)
+	if err != nil {
+		log.Fatalf("Failed to check if tables exist: %v", err)
 	}
 
-	for _, migrationPath := range migrationFiles {
-		if _, err := os.Stat(migrationPath); err == nil {
-			err = database.RunMigrations(migrationPath)
-			if err != nil {
-				log.Printf("Warning: Migration %s failed: %v", migrationPath, err)
-			} else {
-				log.Printf("✓ Migration %s completed", migrationPath)
+	if !tableExists {
+		log.Println("⚠️  Database tables not found. Running initial migration...")
+		migrationFiles := []string{
+			"internal/database/migrations/006_complete_schema.sql",
+		}
+
+		for _, migrationPath := range migrationFiles {
+			if _, err := os.Stat(migrationPath); err == nil {
+				err = database.RunMigrations(migrationPath)
+				if err != nil {
+					log.Fatalf("Migration %s failed: %v", migrationPath, err)
+				} else {
+					log.Printf("✓ Migration %s completed", migrationPath)
+				}
 			}
 		}
+		log.Println("✓ All database migrations completed")
+	} else {
+		log.Println("✓ Database tables already exist, skipping migrations")
 	}
-	log.Println("✓ All database migrations completed")
 
 	// Initialize bot service
 	botService, err := services.NewBotService(cfg, database.DB)

@@ -238,7 +238,7 @@ func (r *AttendanceRepository) GetByStudentIDAndDateRange(studentID int, startDa
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
 		       date, status, created_at
 		FROM v_attendance_detailed
-		WHERE student_id = ? AND date BETWEEN ? AND ?
+		WHERE student_id = ? AND date(date) BETWEEN date(?) AND date(?)
 		ORDER BY date DESC
 	`
 	rows, err := r.db.Query(query, studentID, startDate, endDate)
@@ -276,7 +276,7 @@ func (r *AttendanceRepository) GetByClassIDAndDate(classID int, date string) ([]
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
 		       date, status, created_at
 		FROM v_attendance_detailed
-		WHERE class_id = ? AND date = ?
+		WHERE class_id = ? AND date(date) = date(?)
 		ORDER BY last_name, first_name
 	`
 	rows, err := r.db.Query(query, classID, date)
@@ -310,18 +310,22 @@ func (r *AttendanceRepository) GetByClassIDAndDate(classID int, date string) ([]
 
 // GetTodayAttendanceByClass retrieves today's attendance for a specific class
 func (r *AttendanceRepository) GetTodayAttendanceByClass(classID int) ([]*models.AttendanceDetailed, error) {
-	today := time.Now().Format("2006-01-02")
+	// Use Uzbekistan timezone (Asia/Tashkent UTC+5) to match attendance taking
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	today := time.Now().In(location).Format("2006-01-02")
 	return r.GetByClassIDAndDate(classID, today)
 }
 
 // GetTodayAttendanceAllClasses retrieves today's attendance for all classes
 func (r *AttendanceRepository) GetTodayAttendanceAllClasses() ([]*models.AttendanceDetailed, error) {
-	today := time.Now().Format("2006-01-02")
+	// Use Uzbekistan timezone (Asia/Tashkent UTC+5) to match attendance taking
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	today := time.Now().In(location).Format("2006-01-02")
 	query := `
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
 		       date, status, created_at
 		FROM v_attendance_detailed
-		WHERE date = ?
+		WHERE date(date) = date(?)
 		ORDER BY class_name, last_name, first_name
 	`
 	rows, err := r.db.Query(query, today)
@@ -386,7 +390,7 @@ func (r *AttendanceRepository) IsAttendanceTaken(classID int, date string) (bool
 		SELECT EXISTS(
 			SELECT 1 FROM attendance a
 			INNER JOIN students s ON a.student_id = s.id
-			WHERE s.class_id = ? AND a.date = ?
+			WHERE s.class_id = ? AND date(a.date) = date(?)
 		)
 	`
 	var exists bool
@@ -396,7 +400,10 @@ func (r *AttendanceRepository) IsAttendanceTaken(classID int, date string) (bool
 
 // GetLast30DaysByStudent retrieves last 30 days attendance for a student
 func (r *AttendanceRepository) GetLast30DaysByStudent(studentID int) ([]*models.AttendanceDetailed, error) {
-	thirtyDaysAgo := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
-	today := time.Now().Format("2006-01-02")
+	// Use Uzbekistan timezone (Asia/Tashkent UTC+5) to match attendance taking
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	now := time.Now().In(location)
+	thirtyDaysAgo := now.AddDate(0, 0, -30).Format("2006-01-02")
+	today := now.Format("2006-01-02")
 	return r.GetByStudentIDAndDateRange(studentID, thirtyDaysAgo, today)
 }

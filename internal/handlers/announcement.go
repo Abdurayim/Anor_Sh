@@ -85,32 +85,63 @@ func HandleViewAnnouncementsCommand(botService *services.BotService, message *tg
 
 		// Send announcement with image if available
 		if announcement.TelegramFileID != nil && *announcement.TelegramFileID != "" {
-			// Send photo with caption
-			photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(*announcement.TelegramFileID))
-			photo.Caption = text
-			photo.ParseMode = "HTML"
-			if inlineKeyboard != nil {
-				photo.ReplyMarkup = inlineKeyboard
+			fileID := *announcement.TelegramFileID
+			log.Printf("Sending announcement #%d with media (FileID: %s, Type: %v)", announcement.ID, fileID, announcement.FileType)
+
+			// Check if it's a document or photo based on FileID prefix
+			// Document FileIDs start with "BQAC", Photo FileIDs start with "AgAC"
+			isDocument := len(fileID) > 4 && fileID[:4] == "BQAC"
+
+			var sendErr error
+			if isDocument {
+				// Send as document
+				log.Printf("Detected document type, sending as document")
+				doc := tgbotapi.NewDocument(chatID, tgbotapi.FileID(fileID))
+				doc.Caption = text
+				doc.ParseMode = "HTML"
+				if inlineKeyboard != nil {
+					doc.ReplyMarkup = *inlineKeyboard
+				}
+				_, sendErr = botService.Bot.Send(doc)
+			} else {
+				// Send as photo
+				log.Printf("Detected photo type, sending as photo")
+				photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
+				photo.Caption = text
+				photo.ParseMode = "HTML"
+				if inlineKeyboard != nil {
+					photo.ReplyMarkup = *inlineKeyboard
+				}
+				_, sendErr = botService.Bot.Send(photo)
 			}
-			_, err = botService.Bot.Send(photo)
-			if err != nil {
-				log.Printf("Failed to send photo: %v", err)
+
+			if sendErr != nil {
+				log.Printf("ERROR: Failed to send media for announcement #%d: %v (FileID: %s)", announcement.ID, sendErr, fileID)
 				// Fallback to text only
 				msg := tgbotapi.NewMessage(chatID, text)
 				msg.ParseMode = "HTML"
 				if inlineKeyboard != nil {
-					msg.ReplyMarkup = inlineKeyboard
+					msg.ReplyMarkup = *inlineKeyboard
 				}
-				_, _ = botService.Bot.Send(msg)
+				_, textErr := botService.Bot.Send(msg)
+				if textErr != nil {
+					log.Printf("ERROR: Failed to send text fallback: %v", textErr)
+				}
+			} else {
+				log.Printf("Successfully sent announcement #%d with media", announcement.ID)
 			}
 		} else {
+			log.Printf("Sending announcement #%d without image (text only)", announcement.ID)
 			// Send text only
 			msg := tgbotapi.NewMessage(chatID, text)
 			msg.ParseMode = "HTML"
 			if inlineKeyboard != nil {
-				msg.ReplyMarkup = inlineKeyboard
+				msg.ReplyMarkup = *inlineKeyboard
 			}
-			_, _ = botService.Bot.Send(msg)
+			_, sendErr := botService.Bot.Send(msg)
+			if sendErr != nil {
+				log.Printf("ERROR: Failed to send text message: %v", sendErr)
+			}
 		}
 	}
 
@@ -276,9 +307,10 @@ func HandleAnnouncementFile(botService *services.BotService, message *tgbotapi.M
 		fname := fmt.Sprintf("announcement_%d.jpg", telegramID)
 		filename = &fname
 	} else if message.Document != nil {
-		// Check if document is an image
+		// Check if document is an image (including HEIC for iPhone)
 		mimeType := message.Document.MimeType
-		if mimeType == "image/jpeg" || mimeType == "image/jpg" || mimeType == "image/png" || mimeType == "image/gif" {
+		if mimeType == "image/jpeg" || mimeType == "image/jpg" || mimeType == "image/png" ||
+		   mimeType == "image/gif" || mimeType == "image/heic" || mimeType == "image/heif" {
 			fileID = &message.Document.FileID
 			fname := message.Document.FileName
 			if fname == "" {
@@ -286,7 +318,7 @@ func HandleAnnouncementFile(botService *services.BotService, message *tgbotapi.M
 			}
 			filename = &fname
 		} else {
-			text := i18n.Get(i18n.ErrInvalidFile, lang) + "\n\nIltimos, rasm formatini yuboring (JPG, PNG, GIF). / Пожалуйста, отправьте изображение в формате JPG, PNG или GIF."
+			text := i18n.Get(i18n.ErrInvalidFile, lang) + "\n\nIltimos, rasm formatini yuboring (JPG, PNG, GIF, HEIC). / Пожалуйста, отправьте изображение в формате JPG, PNG, GIF или HEIC."
 			// Keep the main menu keyboard visible on errors
 			keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
 			return botService.TelegramService.SendMessage(chatID, text, &keyboard)
@@ -345,11 +377,25 @@ func saveAnnouncement(botService *services.BotService, telegramID int64, chatID 
 		PostedByAdminID: adminID,
 	}
 
+	// Log file ID for debugging
+	if fileID != nil {
+		log.Printf("Creating announcement with FileID: %s", *fileID)
+	} else {
+		log.Printf("Creating announcement without image (FileID is nil)")
+	}
+
 	announcement, err := botService.AnnouncementService.CreateAnnouncement(announcementReq)
 	if err != nil {
 		log.Printf("Failed to save announcement: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Verify the announcement was created with file ID
+	if announcement.TelegramFileID != nil {
+		log.Printf("Announcement #%d created successfully with FileID: %s", announcement.ID, *announcement.TelegramFileID)
+	} else {
+		log.Printf("Announcement #%d created successfully without image", announcement.ID)
 	}
 
 	// Clear state
@@ -385,6 +431,8 @@ func notifyUsersAboutAnnouncement(botService *services.BotService, announcement 
 	text += fmt.Sprintf("\n\n📅 %s", utils.FormatDateTime(announcement.CreatedAt))
 
 	// Send to all users
+	successCount := 0
+	failCount := 0
 	for _, user := range users {
 		chatID := user.TelegramID
 		lang := i18n.GetLanguage(user.Language)
@@ -394,14 +442,42 @@ func notifyUsersAboutAnnouncement(botService *services.BotService, announcement 
 		keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
 
 		if announcement.TelegramFileID != nil && *announcement.TelegramFileID != "" {
-			// Send photo with caption and keyboard
-			photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(*announcement.TelegramFileID))
-			photo.Caption = text
-			photo.ParseMode = "HTML"
-			photo.ReplyMarkup = keyboard
-			_, err = botService.Bot.Send(photo)
-			if err != nil {
-				log.Printf("Failed to send announcement to user %d: %v", user.ID, err)
+			fileID := *announcement.TelegramFileID
+			// Check if it's a document or photo based on FileID prefix
+			isDocument := len(fileID) > 4 && fileID[:4] == "BQAC"
+
+			var sendErr error
+			if isDocument {
+				// Send as document with caption and keyboard
+				doc := tgbotapi.NewDocument(chatID, tgbotapi.FileID(fileID))
+				doc.Caption = text
+				doc.ParseMode = "HTML"
+				doc.ReplyMarkup = keyboard
+				_, sendErr = botService.Bot.Send(doc)
+			} else {
+				// Send as photo with caption and keyboard
+				photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
+				photo.Caption = text
+				photo.ParseMode = "HTML"
+				photo.ReplyMarkup = keyboard
+				_, sendErr = botService.Bot.Send(photo)
+			}
+
+			if sendErr != nil {
+				log.Printf("Failed to send announcement with media to user %d (TelegramID: %d): %v", user.ID, chatID, sendErr)
+				// Try fallback to text only
+				msg := tgbotapi.NewMessage(chatID, text)
+				msg.ParseMode = "HTML"
+				msg.ReplyMarkup = keyboard
+				_, fallbackErr := botService.Bot.Send(msg)
+				if fallbackErr != nil {
+					log.Printf("Fallback also failed for user %d: %v", user.ID, fallbackErr)
+					failCount++
+				} else {
+					successCount++
+				}
+			} else {
+				successCount++
 			}
 		} else {
 			// Send text with keyboard
@@ -411,11 +487,14 @@ func notifyUsersAboutAnnouncement(botService *services.BotService, announcement 
 			_, err = botService.Bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to send announcement to user %d: %v", user.ID, err)
+				failCount++
+			} else {
+				successCount++
 			}
 		}
 	}
 
-	log.Printf("Announcement sent to %d users", len(users))
+	log.Printf("Announcement notification complete: %d successful, %d failed out of %d users", successCount, failCount, len(users))
 }
 
 // HandleAnnouncementDeleteCallback handles announcement deletion request
@@ -704,20 +783,54 @@ func HandleAdminViewAnnouncementsCallback(botService *services.BotService, callb
 
 		// Send announcement with image if available
 		if announcement.TelegramFileID != nil && *announcement.TelegramFileID != "" {
-			// Send photo with caption
-			photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(*announcement.TelegramFileID))
-			photo.Caption = text
-			photo.ParseMode = "HTML"
-			photo.ReplyMarkup = keyboard
-			_, err = botService.Bot.Send(photo)
-			if err != nil {
-				log.Printf("Failed to send photo: %v", err)
+			fileID := *announcement.TelegramFileID
+			log.Printf("Admin view: Sending announcement #%d with media (FileID: %s, Type: %v)", announcement.ID, fileID, announcement.FileType)
+
+			// Check if it's a document or photo based on FileID prefix
+			isDocument := len(fileID) > 4 && fileID[:4] == "BQAC"
+
+			var sendErr error
+			if isDocument {
+				// Send as document
+				log.Printf("Admin view: Detected document type, sending as document")
+				doc := tgbotapi.NewDocument(chatID, tgbotapi.FileID(fileID))
+				doc.Caption = text
+				doc.ParseMode = "HTML"
+				doc.ReplyMarkup = keyboard
+				_, sendErr = botService.Bot.Send(doc)
+			} else {
+				// Send as photo
+				log.Printf("Admin view: Detected photo type, sending as photo")
+				photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
+				photo.Caption = text
+				photo.ParseMode = "HTML"
+				photo.ReplyMarkup = keyboard
+				_, sendErr = botService.Bot.Send(photo)
+			}
+
+			if sendErr != nil {
+				log.Printf("ERROR: Admin view failed to send media for announcement #%d: %v (FileID: %s)", announcement.ID, sendErr, fileID)
 				// Fallback to text only
-				_ = botService.TelegramService.SendMessage(chatID, text, &keyboard)
+				msg := tgbotapi.NewMessage(chatID, text)
+				msg.ParseMode = "HTML"
+				msg.ReplyMarkup = keyboard
+				_, textErr := botService.Bot.Send(msg)
+				if textErr != nil {
+					log.Printf("ERROR: Failed to send text fallback: %v", textErr)
+				}
+			} else {
+				log.Printf("Successfully sent admin announcement #%d with media", announcement.ID)
 			}
 		} else {
+			log.Printf("Admin view: Sending announcement #%d without image (text only)", announcement.ID)
 			// Send text only
-			_ = botService.TelegramService.SendMessage(chatID, text, &keyboard)
+			msg := tgbotapi.NewMessage(chatID, text)
+			msg.ParseMode = "HTML"
+			msg.ReplyMarkup = keyboard
+			_, sendErr := botService.Bot.Send(msg)
+			if sendErr != nil {
+				log.Printf("ERROR: Failed to send text message: %v", sendErr)
+			}
 		}
 	}
 

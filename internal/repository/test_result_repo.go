@@ -74,7 +74,7 @@ func (r *TestResultRepository) GetByID(id int) (*models.TestResult, error) {
 func (r *TestResultRepository) GetByStudentID(studentID int, limit, offset int) ([]*models.TestResultDetailed, error) {
 	query := `
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
-		       subject_name, score, test_date, created_at, updated_at
+		       subject_name, score, test_date, created_at
 		FROM v_test_results_detailed
 		WHERE student_id = ?
 		ORDER BY test_date DESC, created_at DESC
@@ -100,7 +100,6 @@ func (r *TestResultRepository) GetByStudentID(studentID int, limit, offset int) 
 			&result.Score,
 			&result.TestDate,
 			&result.CreatedAt,
-			&result.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -115,7 +114,7 @@ func (r *TestResultRepository) GetByStudentID(studentID int, limit, offset int) 
 func (r *TestResultRepository) GetByClassID(classID int, limit, offset int) ([]*models.TestResultDetailed, error) {
 	query := `
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
-		       subject_name, score, test_date, created_at, updated_at
+		       subject_name, score, test_date, created_at
 		FROM v_test_results_detailed
 		WHERE class_id = ?
 		ORDER BY class_name, last_name, first_name, test_date DESC
@@ -141,7 +140,46 @@ func (r *TestResultRepository) GetByClassID(classID int, limit, offset int) ([]*
 			&result.Score,
 			&result.TestDate,
 			&result.CreatedAt,
-			&result.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// GetByClassIDAndDateRange retrieves test results for a class within a date range
+func (r *TestResultRepository) GetByClassIDAndDateRange(classID int, startDate, endDate string, limit, offset int) ([]*models.TestResultDetailed, error) {
+	query := `
+		SELECT id, student_id, first_name, last_name, class_id, class_name,
+		       subject_name, score, test_date, created_at
+		FROM v_test_results_detailed
+		WHERE class_id = ? AND test_date >= ? AND test_date <= ?
+		ORDER BY class_name, last_name, first_name, test_date DESC
+		LIMIT ? OFFSET ?
+	`
+	rows, err := r.db.Query(query, classID, startDate, endDate, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []*models.TestResultDetailed
+	for rows.Next() {
+		result := &models.TestResultDetailed{}
+		err := rows.Scan(
+			&result.ID,
+			&result.StudentID,
+			&result.FirstName,
+			&result.LastName,
+			&result.ClassID,
+			&result.ClassName,
+			&result.SubjectName,
+			&result.Score,
+			&result.TestDate,
+			&result.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -156,7 +194,7 @@ func (r *TestResultRepository) GetByClassID(classID int, limit, offset int) ([]*
 func (r *TestResultRepository) GetAllByClassID(classID int) ([]*models.TestResultDetailed, error) {
 	query := `
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
-		       subject_name, score, test_date, created_at, updated_at
+		       subject_name, score, test_date, created_at
 		FROM v_test_results_detailed
 		WHERE class_id = ?
 		ORDER BY last_name, first_name, subject_name, test_date DESC
@@ -181,7 +219,6 @@ func (r *TestResultRepository) GetAllByClassID(classID int) ([]*models.TestResul
 			&result.Score,
 			&result.TestDate,
 			&result.CreatedAt,
-			&result.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -242,7 +279,7 @@ func (r *TestResultRepository) CountByStudent(studentID int) (int, error) {
 func (r *TestResultRepository) GetLatestByStudent(studentID int, limit int) ([]*models.TestResultDetailed, error) {
 	query := `
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
-		       subject_name, score, test_date, created_at, updated_at
+		       subject_name, score, test_date, created_at
 		FROM v_test_results_detailed
 		WHERE student_id = ?
 		ORDER BY test_date DESC, created_at DESC
@@ -268,7 +305,6 @@ func (r *TestResultRepository) GetLatestByStudent(studentID int, limit int) ([]*
 			&result.Score,
 			&result.TestDate,
 			&result.CreatedAt,
-			&result.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err

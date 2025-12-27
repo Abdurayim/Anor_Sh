@@ -156,7 +156,125 @@ func HandleStudentInfo(botService *services.BotService, message *tgbotapi.Messag
 		studentID, firstName, lastName, className,
 	)
 
-	return botService.TelegramService.SendMessage(chatID, text, nil)
+	// Create keyboard with "Add More" button
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"➕ Yana o'quvchi qo'shish / Добавить ещё",
+				fmt.Sprintf("admin_add_student_%d", class.ID),
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"◀️ Sinfga qaytish / Назад к классу",
+				fmt.Sprintf("admin_view_class_%d", class.ID),
+			),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+
+	_, err = botService.Bot.Send(msg)
+	return err
+}
+
+// HandleAdminStudentNameInput handles student name input when admin adds student to a specific class
+func HandleAdminStudentNameInput(botService *services.BotService, message *tgbotapi.Message, stateData *models.StateData) error {
+	telegramID := message.From.ID
+	chatID := message.Chat.ID
+
+	// Check if classID is set
+	if stateData.ClassID == nil {
+		text := "❌ Xatolik: sinf ma'lumoti topilmadi / Ошибка: информация о классе не найдена"
+		_ = botService.StateManager.Clear(telegramID)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	classID := *stateData.ClassID
+
+	// Parse full name
+	fullName := strings.TrimSpace(message.Text)
+	nameParts := strings.Fields(fullName)
+	if len(nameParts) < 2 {
+		text := "❌ Iltimos, ism va familiyani kiriting.\n\n" +
+			"❌ Пожалуйста, введите имя и фамилию.\n\n" +
+			"<b>Misol / Пример:</b> Jasur Rahimov"
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	firstName := nameParts[0]
+	lastName := strings.Join(nameParts[1:], " ")
+
+	// Get class info
+	class, err := botService.ClassRepo.GetByID(classID)
+	if err != nil || class == nil {
+		text := "❌ Sinf topilmadi / Класс не найден"
+		_ = botService.StateManager.Clear(telegramID)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get admin info
+	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
+	if err != nil || admin == nil {
+		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
+		_ = botService.StateManager.Clear(telegramID)
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Create student
+	studentReq := &models.CreateStudentRequest{
+		FirstName:      firstName,
+		LastName:       lastName,
+		ClassID:        classID,
+		AddedByAdminID: &admin.ID,
+	}
+	studentID, err := botService.StudentRepo.Create(studentReq)
+	if err != nil {
+		log.Printf("Failed to create student: %v", err)
+		text := "❌ Xatolik / Ошибка: " + err.Error()
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Clear state
+	_ = botService.StateManager.Clear(telegramID)
+
+	// Success message
+	text := fmt.Sprintf(
+		"✅ <b>O'quvchi muvaffaqiyatly qo'shildi!</b>\n\n"+
+			"📌 ID: <code>%d</code>\n"+
+			"👤 Ism-Familiya: <b>%s %s</b>\n"+
+			"📚 Sinf: <b>%s</b>\n\n"+
+			"✅ <b>Ученик успешно добавлен!</b>\n\n"+
+			"📌 ID: <code>%d</code>\n"+
+			"👤 Имя-Фамилия: <b>%s %s</b>\n"+
+			"📚 Класс: <b>%s</b>",
+		studentID, firstName, lastName, class.ClassName,
+		studentID, firstName, lastName, class.ClassName,
+	)
+
+	// Create keyboard with "Add More" and "Back" buttons
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"➕ Yana o'quvchi qo'shish / Добавить ещё",
+				fmt.Sprintf("admin_add_student_%d", classID),
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"◀️ Orqaga / Назад",
+				fmt.Sprintf("admin_view_class_%d", classID),
+			),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+	_, err = botService.Bot.Send(msg)
+	return err
 }
 
 // HandleLinkStudentCommand initiates linking a student to a parent (admin only)
@@ -292,15 +410,8 @@ func HandleLinkInfo(botService *services.BotService, message *tgbotapi.Message, 
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// If this is the first child, set as current selected
-	if len(existingLinks) == 0 {
-		err = botService.UserRepo.Update(parent.ID, &models.UpdateUserRequest{
-			CurrentSelectedStudentID: &studentID,
-		})
-		if err != nil {
-			log.Printf("Failed to set current student: %v", err)
-		}
-	}
+	// Deprecated: No longer setting current selected student ID
+	// Multi-child system uses callback-based selection
 
 	// Clear state
 	_ = botService.StateManager.Clear(telegramID)
@@ -485,16 +596,9 @@ func HandleParentPhoneForView(botService *services.BotService, message *tgbotapi
 	)
 
 	for i, child := range children {
-		currentMark := ""
-		if parent.CurrentSelectedStudentID != nil && *parent.CurrentSelectedStudentID == child.StudentID {
-			currentMark = " 🎯"
-		}
-
-		text += fmt.Sprintf("%d. <b>%s %s</b>%s\n   ID: <code>%d</code> | Sinf/Класс: <b>%s</b>\n\n",
-			i+1, child.StudentFirstName, child.StudentLastName, currentMark, child.StudentID, child.ClassName)
+		text += fmt.Sprintf("%d. <b>%s %s</b>\n   ID: <code>%d</code> | Sinf/Класс: <b>%s</b>\n\n",
+			i+1, child.StudentFirstName, child.StudentLastName, child.StudentID, child.ClassName)
 	}
-
-	text += "\n🎯 - tanlangan farzand / выбранный ребенок"
 
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }

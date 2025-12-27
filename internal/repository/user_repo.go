@@ -44,8 +44,7 @@ func (r *UserRepository) Create(req *models.CreateUserRequest) (*models.User, er
 // GetByTelegramID gets user by telegram ID (indexed, fast query)
 func (r *UserRepository) GetByTelegramID(telegramID int64) (*models.User, error) {
 	query := `
-		SELECT id, telegram_id, telegram_username, phone_number, language,
-		       current_selected_student_id, registered_at
+		SELECT id, telegram_id, telegram_username, phone_number, language, registered_at
 		FROM users
 		WHERE telegram_id = ?
 	`
@@ -57,7 +56,6 @@ func (r *UserRepository) GetByTelegramID(telegramID int64) (*models.User, error)
 		&user.TelegramUsername,
 		&user.PhoneNumber,
 		&user.Language,
-		&user.CurrentSelectedStudentID,
 		&user.RegisteredAt,
 	)
 
@@ -75,8 +73,7 @@ func (r *UserRepository) GetByTelegramID(telegramID int64) (*models.User, error)
 // GetByPhoneNumber gets user by phone number (indexed, fast query)
 func (r *UserRepository) GetByPhoneNumber(phoneNumber string) (*models.User, error) {
 	query := `
-		SELECT id, telegram_id, telegram_username, phone_number, language,
-		       current_selected_student_id, registered_at
+		SELECT id, telegram_id, telegram_username, phone_number, language, registered_at
 		FROM users
 		WHERE phone_number = ?
 	`
@@ -88,7 +85,6 @@ func (r *UserRepository) GetByPhoneNumber(phoneNumber string) (*models.User, err
 		&user.TelegramUsername,
 		&user.PhoneNumber,
 		&user.Language,
-		&user.CurrentSelectedStudentID,
 		&user.RegisteredAt,
 	)
 
@@ -111,8 +107,7 @@ func (r *UserRepository) GetByPhone(phoneNumber string) (*models.User, error) {
 // GetByID gets user by ID
 func (r *UserRepository) GetByID(id int) (*models.User, error) {
 	query := `
-		SELECT id, telegram_id, telegram_username, phone_number, language,
-		       current_selected_student_id, registered_at
+		SELECT id, telegram_id, telegram_username, phone_number, language, registered_at
 		FROM users
 		WHERE id = ?
 	`
@@ -124,7 +119,6 @@ func (r *UserRepository) GetByID(id int) (*models.User, error) {
 		&user.TelegramUsername,
 		&user.PhoneNumber,
 		&user.Language,
-		&user.CurrentSelectedStudentID,
 		&user.RegisteredAt,
 	)
 
@@ -143,7 +137,7 @@ func (r *UserRepository) GetByID(id int) (*models.User, error) {
 func (r *UserRepository) GetAll(limit, offset int) ([]*models.User, error) {
 	query := `
 		SELECT id, telegram_id, telegram_username, phone_number, language,
-		       current_selected_student_id, registered_at
+ registered_at
 		FROM users
 		ORDER BY registered_at DESC
 		LIMIT ? OFFSET ?
@@ -164,8 +158,7 @@ func (r *UserRepository) GetAll(limit, offset int) ([]*models.User, error) {
 			&user.TelegramUsername,
 			&user.PhoneNumber,
 			&user.Language,
-			&user.CurrentSelectedStudentID,
-			&user.RegisteredAt,
+				&user.RegisteredAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -180,7 +173,7 @@ func (r *UserRepository) GetAll(limit, offset int) ([]*models.User, error) {
 func (r *UserRepository) GetParentsByClassID(classID int) ([]*models.User, error) {
 	query := `
 		SELECT DISTINCT u.id, u.telegram_id, u.telegram_username, u.phone_number,
-		       u.language, u.current_selected_student_id, u.registered_at
+		       u.language, u.registered_at
 		FROM users u
 		INNER JOIN parent_students ps ON u.id = ps.parent_id
 		INNER JOIN students s ON ps.student_id = s.id
@@ -203,7 +196,6 @@ func (r *UserRepository) GetParentsByClassID(classID int) ([]*models.User, error
 			&user.TelegramUsername,
 			&user.PhoneNumber,
 			&user.Language,
-			&user.CurrentSelectedStudentID,
 			&user.RegisteredAt,
 		)
 		if err != nil {
@@ -224,7 +216,7 @@ func (r *UserRepository) GetParentsByClassIDs(classIDs []int) ([]*models.User, e
 	// Build query with placeholders
 	query := fmt.Sprintf(`
 		SELECT DISTINCT u.id, u.telegram_id, u.telegram_username, u.phone_number,
-		       u.language, u.current_selected_student_id, u.registered_at
+		       u.language, u.registered_at
 		FROM users u
 		INNER JOIN parent_students ps ON u.id = ps.parent_id
 		INNER JOIN students s ON ps.student_id = s.id
@@ -253,7 +245,6 @@ func (r *UserRepository) GetParentsByClassIDs(classIDs []int) ([]*models.User, e
 			&user.TelegramUsername,
 			&user.PhoneNumber,
 			&user.Language,
-			&user.CurrentSelectedStudentID,
 			&user.RegisteredAt,
 		)
 		if err != nil {
@@ -269,12 +260,11 @@ func (r *UserRepository) GetParentsByClassIDs(classIDs []int) ([]*models.User, e
 func (r *UserRepository) Update(userID int, req *models.UpdateUserRequest) error {
 	query := `
 		UPDATE users
-		SET language = COALESCE(?, language),
-		    current_selected_student_id = COALESCE(?, current_selected_student_id)
+		SET language = COALESCE(?, language)
 		WHERE id = ?
 	`
 
-	_, err := r.db.Exec(query, req.Language, req.CurrentSelectedStudentID, userID)
+	_, err := r.db.Exec(query, req.Language, userID)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}

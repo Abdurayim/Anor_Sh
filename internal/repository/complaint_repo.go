@@ -19,7 +19,7 @@ func NewComplaintRepository(db *sql.DB) *ComplaintRepository {
 func (r *ComplaintRepository) Create(req *models.CreateComplaintRequest) (*models.Complaint, error) {
 	query := `
 		INSERT INTO complaints (user_id, complaint_text, telegram_file_id, filename)
-		VALUES ($1, $2, $3, $4)
+		VALUES (?, ?, ?, ?)
 		RETURNING id, user_id, complaint_text, telegram_file_id, filename, created_at, status
 	`
 
@@ -52,7 +52,7 @@ func (r *ComplaintRepository) GetByID(id int) (*models.Complaint, error) {
 	query := `
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status
 		FROM complaints
-		WHERE id = $1
+		WHERE id = ?
 	`
 
 	var complaint models.Complaint
@@ -82,9 +82,9 @@ func (r *ComplaintRepository) GetByUserID(userID int, limit, offset int) ([]*mod
 	query := `
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status
 		FROM complaints
-		WHERE user_id = $1
+		WHERE user_id = ?
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, userID, limit, offset)
@@ -120,7 +120,7 @@ func (r *ComplaintRepository) GetAll(limit, offset int) ([]*models.Complaint, er
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status
 		FROM complaints
 		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -154,9 +154,10 @@ func (r *ComplaintRepository) GetAll(limit, offset int) ([]*models.Complaint, er
 func (r *ComplaintRepository) GetAllWithUser(limit, offset int) ([]*models.ComplaintWithUser, error) {
 	query := `
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status,
-		       user_telegram_id, telegram_username, phone_number, language
+		       telegram_id as user_telegram_id, telegram_username, phone_number, language
 		FROM v_complaints_with_user
-		LIMIT $1 OFFSET $2
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, limit, offset)
@@ -195,9 +196,9 @@ func (r *ComplaintRepository) GetByStatus(status string, limit, offset int) ([]*
 	query := `
 		SELECT id, user_id, complaint_text, telegram_file_id, filename, created_at, status
 		FROM complaints
-		WHERE status = $1
+		WHERE status = ?
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
+		LIMIT ? OFFSET ?
 	`
 
 	rows, err := r.db.Query(query, status, limit, offset)
@@ -229,7 +230,7 @@ func (r *ComplaintRepository) GetByStatus(status string, limit, offset int) ([]*
 
 // UpdateStatus updates complaint status
 func (r *ComplaintRepository) UpdateStatus(id int, status string) error {
-	query := `UPDATE complaints SET status = $1 WHERE id = $2`
+	query := `UPDATE complaints SET status = ? WHERE id = ?`
 	_, err := r.db.Exec(query, status, id)
 	if err != nil {
 		return fmt.Errorf("failed to update complaint status: %w", err)
@@ -250,7 +251,7 @@ func (r *ComplaintRepository) Count() (int, error) {
 // CountByStatus counts complaints by status
 func (r *ComplaintRepository) CountByStatus(status string) (int, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM complaints WHERE status = $1`
+	query := `SELECT COUNT(*) FROM complaints WHERE status = ?`
 	err := r.db.QueryRow(query, status).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count complaints by status: %w", err)
@@ -261,7 +262,7 @@ func (r *ComplaintRepository) CountByStatus(status string) (int, error) {
 // CountByUserID counts complaints by user ID
 func (r *ComplaintRepository) CountByUserID(userID int) (int, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM complaints WHERE user_id = $1`
+	query := `SELECT COUNT(*) FROM complaints WHERE user_id = ?`
 	err := r.db.QueryRow(query, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count user complaints: %w", err)

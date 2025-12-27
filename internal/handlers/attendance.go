@@ -8,36 +8,170 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"parent-bot/internal/i18n"
 	"parent-bot/internal/models"
 	"parent-bot/internal/services"
+	"parent-bot/internal/utils"
 )
 
-// HandleTeacherTakeAttendanceCommand allows teacher to mark attendance
+// HandleTeacherTakeAttendanceCommand allows teacher to mark attendance by class
 func HandleTeacherTakeAttendanceCommand(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	chatID := message.Chat.ID
 
-	text := "📋 <b>Yo'qlama olish / Отметить посещаемость</b>\n\n" +
-		"Quyidagi formatda ma'lumotlarni yuboring:\n" +
-		"Отправьте данные в следующем формате:\n\n" +
-		"<code>O'quvchi ID / ID ученика\n" +
-		"Status: + (keldi) yoki - (kelmadi)\n" +
-		"Sana (YYYY-MM-DD)</code>\n\n" +
-		"<b>Misol / Пример:</b>\n" +
-		"<code>15\n" +
-		"+\n" +
-		"2025-12-02</code>\n\n" +
-		"💡 + = keldi (present) / пришел\n" +
-		"💡 - = kelmadi (absent) / не пришел\n" +
-		"💡 O'quvchi ID larini ko'rish: /list_students"
-
-	// Set state
-	stateData := &models.StateData{}
-	err := botService.StateManager.Set(message.From.ID, "awaiting_attendance_info", stateData)
+	// Get all classes (teachers can access all classes)
+	classes, err := botService.ClassRepo.GetAll()
 	if err != nil {
-		return err
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы danных"
+		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	return botService.TelegramService.SendMessage(chatID, text, nil)
+	if len(classes) == 0 {
+		text := "📚 Hozircha sinflar yo'q. Admin sinf qo'shishi kerak.\n\n" +
+			"📚 Пока нет классов. Администратор должен добавить классы."
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Create inline keyboard for class selection
+	var buttons [][]tgbotapi.InlineKeyboardButton
+	for _, class := range classes {
+		button := tgbotapi.NewInlineKeyboardButtonData(
+			class.ClassName,
+			fmt.Sprintf("attendance_select_class_%d", class.ID),
+		)
+		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button})
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+
+	text := "📋 <b>Yo'qlama olish / Отметить посещаемость</b>\n\n" +
+		"Qaysi sinf uchun yo'qlama olmoqchisiz?\n" +
+		"Для какого класса хотите отметить посещаемость?"
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+
+	_, err = botService.Bot.Send(msg)
+	return err
+}
+
+// HandleAttendanceClassSelection handles when teacher selects a class for attendance
+func HandleAttendanceClassSelection(botService *services.BotService, callback *tgbotapi.CallbackQuery, classID int) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	// Get teacher
+	teacher, err := botService.TeacherService.GetTeacherByTelegramID(telegramID)
+	if err != nil || teacher == nil {
+		// Could also be admin
+		admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
+		if err != nil || admin == nil {
+			text := "❌ Ruxsat yo'q / Нет разрешения"
+			_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+			return botService.TelegramService.SendMessage(chatID, text, nil)
+		}
+	}
+
+	// Teachers can access all classes - no verification needed
+
+	// Get students in this class
+	students, err := botService.StudentRepo.GetByClassID(classID)
+	if err != nil {
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	if len(students) == 0 {
+		text := "📝 Bu sinfda o'quvchilar yo'q.\n\n📝 В этом классе нет учеников."
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get class name
+	class, _ := botService.ClassRepo.GetByID(classID)
+	className := fmt.Sprintf("%d", classID)
+	if class != nil {
+		className = class.ClassName
+	}
+
+	// Get today's date in Uzbekistan time (Asia/Tashkent UTC+5)
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	today := time.Now().In(location)
+	todayStr := today.Format("2006-01-02")
+
+	// Check if attendance already exists for today
+	existingRecords, _ := botService.AttendanceService.GetAttendanceByClassIDAndDate(classID, todayStr)
+	existingAbsentMap := make(map[int]bool) // studentID -> isAbsent
+	for _, record := range existingRecords {
+		if record.Status == "absent" {
+			existingAbsentMap[record.StudentID] = true
+		}
+	}
+
+	// Create inline keyboard with students - SIMPLIFIED: only "-" button for absent
+	var buttons [][]tgbotapi.InlineKeyboardButton
+
+	text := fmt.Sprintf("📋 <b>Yo'qlama / Посещаемость</b>\n\n"+
+		"📚 Sinf / Класс: <b>%s</b>\n"+
+		"📅 Sana / Дата: <b>%s</b>\n\n"+
+		"<b>❌ tugmasini bosing - kelmaganlar uchun</b>\n"+
+		"Qolganlar avtomatik ✅ deb belgilanadi.\n\n"+
+		"<b>Нажмите ❌ для отсутствующих</b>\n"+
+		"Остальные автоматически будут ✅\n\n",
+		className, today.Format("02.01.2006"))
+
+	for i, student := range students {
+		// Check if already marked absent
+		isAbsent := existingAbsentMap[student.ID]
+
+		var buttonText string
+		if isAbsent {
+			buttonText = fmt.Sprintf("❌ %d. %s %s", i+1, student.FirstName, student.LastName)
+		} else {
+			buttonText = fmt.Sprintf("➖ %d. %s %s", i+1, student.FirstName, student.LastName)
+		}
+
+		button := tgbotapi.NewInlineKeyboardButtonData(
+			buttonText,
+			fmt.Sprintf("attendance_toggle_%d_%d", classID, student.ID),
+		)
+		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button})
+	}
+
+	// Add finish button
+	finishButton := tgbotapi.NewInlineKeyboardButtonData(
+		"✅ Tugatish / Завершить",
+		fmt.Sprintf("attendance_finish_%d", classID),
+	)
+	buttons = append(buttons, []tgbotapi.InlineKeyboardButton{finishButton})
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+
+	// Store class ID in state for this session - initialize with existing absent students
+	initialAbsentList := []int{}
+	for studentID := range existingAbsentMap {
+		initialAbsentList = append(initialAbsentList, studentID)
+	}
+
+	stateData := &models.StateData{
+		ClassID:    &classID,
+		AbsentList: initialAbsentList,
+		Date:       todayStr,
+	}
+	err = botService.StateManager.Set(telegramID, "taking_attendance", stateData)
+	if err != nil {
+		log.Printf("Failed to set state: %v", err)
+	}
+
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "HTML"
+	msg.ReplyMarkup = keyboard
+
+	_, err = botService.Bot.Send(msg)
+	return err
 }
 
 // HandleAttendanceInfo processes attendance input from teacher/admin
@@ -98,13 +232,6 @@ func HandleAttendanceInfo(botService *services.BotService, message *tgbotapi.Mes
 
 	if teacher != nil {
 		teacherID = &teacher.ID
-
-		// Verify teacher is assigned to student's class
-		isAssigned, err := botService.TeacherRepo.IsTeacherAssignedToClass(teacher.ID, student.ClassID)
-		if err != nil || !isAssigned {
-			text := "❌ Siz bu sinfga biriktirilmagansiz / Вы не назначены на этот класс"
-			return botService.TelegramService.SendMessage(chatID, text, nil)
-		}
 	} else {
 		// Check if admin
 		admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
@@ -178,33 +305,74 @@ func HandleAttendanceInfo(botService *services.BotService, message *tgbotapi.Mes
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }
 
-// HandleViewAttendanceCommand allows parents to view attendance
-func HandleViewAttendanceCommand(botService *services.BotService, message *tgbotapi.Message, user *models.User) error {
-	chatID := message.Chat.ID
+// HandleViewChildAttendanceCallback handles viewing a specific child's attendance
+func HandleViewChildAttendanceCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
 
-	// Check if user has selected a child
-	if user.CurrentSelectedStudentID == nil {
-		text := "❌ Avval farzandingizni tanlang: /my_children\n\n❌ Сначала выберите ребенка: /my_children"
+	// Extract student ID from callback data (format: "view_child_attendance_123")
+	parts := strings.Split(callback.Data, "_")
+	if len(parts) != 4 {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik / Ошибка")
+		return nil
+	}
+
+	studentID, err := strconv.Atoi(parts[3])
+	if err != nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik / Ошибка")
+		return nil
+	}
+
+	// Get user
+	user, err := botService.UserService.GetUserByTelegramID(telegramID)
+	if err != nil {
+		return err
+	}
+
+	if user == nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Foydalanuvchi topilmadi")
+		return nil
+	}
+
+	// Verify student belongs to this parent
+	children, err := botService.StudentRepo.GetParentStudents(user.ID)
+	if err != nil {
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
+	studentBelongsToParent := false
+	for _, child := range children {
+		if child.StudentID == studentID {
+			studentBelongsToParent = true
+			break
+		}
+	}
+
+	if !studentBelongsToParent {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Bu farzand sizga tegishli emas")
+		return nil
+	}
+
 	// Get attendance records (last 30 days)
-	records, err := botService.AttendanceService.GetAttendanceByStudentID(*user.CurrentSelectedStudentID, 30, 0)
+	records, err := botService.AttendanceService.GetAttendanceByStudentID(studentID, 30, 0)
 	if err != nil {
 		log.Printf("Failed to get attendance: %v", err)
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	if len(records) == 0 {
 		text := "📋 Hozircha yo'qlama ma'lumotlari yo'q.\n\n📋 Пока нет данных о посещаемости."
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Format attendance
 	text := fmt.Sprintf("📋 <b>Yo'qlama / Посещаемость</b>\n\n"+
-		"O'quvchi / Ученик: <b>%s %s</b>\n"+
-		"Sinf / Класс: <b>%s</b>\n\n",
+		"👤 O'quvchi / Ученик: <b>%s %s</b>\n"+
+		"📚 Sinf / Класс: <b>%s</b>\n\n",
 		records[0].FirstName, records[0].LastName, records[0].ClassName)
 
 	presentCount := 0
@@ -214,19 +382,20 @@ func HandleViewAttendanceCommand(botService *services.BotService, message *tgbot
 	for _, r := range records {
 		dateStr := r.Date.Format("02.01.2006")
 		if r.Status == "present" {
-			text += fmt.Sprintf("✅ %s - <b>Keldi / Пришел</b>\n", dateStr)
+			text += fmt.Sprintf("<b>+</b> %s - Keldi / Пришел\n", dateStr)
 			presentCount++
 		} else {
-			text += fmt.Sprintf("❌ %s - <b>Kelmadi / Не пришел</b>\n", dateStr)
+			text += fmt.Sprintf("<b>-</b> %s - Kelmadi / Не пришел\n", dateStr)
 			absentCount++
 		}
 	}
 
 	text += fmt.Sprintf("\n📊 <b>Statistika / Статистика:</b>\n"+
-		"Keldi / Пришел: <b>%d</b>\n"+
-		"Kelmadi / Не пришел: <b>%d</b>",
+		"<b>+</b> Keldi / Пришел: <b>%d</b>\n"+
+		"<b>-</b> Kelmadi / Не пришел: <b>%d</b>",
 		presentCount, absentCount)
 
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 	return botService.TelegramService.SendMessage(chatID, text, nil)
 }
 
@@ -234,15 +403,16 @@ func HandleViewAttendanceCommand(botService *services.BotService, message *tgbot
 func HandleTeacherViewClassAttendanceCommand(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	chatID := message.Chat.ID
 
-	// Get teacher's classes
-	classes, err := botService.TeacherRepo.GetTeacherClasses(teacher.ID)
+	// Get all classes (teachers can access all classes)
+	classes, err := botService.ClassRepo.GetAll()
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	if len(classes) == 0 {
-		text := "📚 Sizga hali sinflar biriktirilmagan.\n\n📚 Вам еще не назначены классы."
+		text := "📚 Hozircha sinflar yo'q. Admin sinf qo'shishi kerak.\n\n" +
+			"📚 Пока нет классов. Администратор должен добавить классы."
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
@@ -320,6 +490,303 @@ func HandleViewClassAttendanceCallback(botService *services.BotService, callback
 
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 	return botService.TelegramService.SendMessage(chatID, text, nil)
+}
+
+// HandleAttendanceToggle handles toggling a student's attendance status
+func HandleAttendanceToggle(botService *services.BotService, callback *tgbotapi.CallbackQuery, classID, studentID int) error {
+	telegramID := callback.From.ID
+
+	// Get state data
+	stateData, err := botService.StateManager.GetData(telegramID)
+	if err != nil || stateData == nil {
+		stateData = &models.StateData{
+			ClassID:    &classID,
+			AbsentList: []int{},
+		}
+	}
+
+	// Toggle student in absent list
+	found := false
+	newAbsentList := []int{}
+	for _, id := range stateData.AbsentList {
+		if id == studentID {
+			found = true
+			// Remove from list (toggle off - student is present)
+		} else {
+			newAbsentList = append(newAbsentList, id)
+		}
+	}
+
+	if !found {
+		// Add to absent list (toggle on - student is absent)
+		newAbsentList = append(stateData.AbsentList, studentID)
+	}
+
+	stateData.AbsentList = newAbsentList
+
+	// Update state
+	err = botService.StateManager.Set(telegramID, "taking_attendance", stateData)
+	if err != nil {
+		log.Printf("Failed to update state: %v", err)
+	}
+
+	// Re-render the attendance selection screen with updated state
+	chatID := callback.Message.Chat.ID
+
+	// Get students in this class
+	students, err := botService.StudentRepo.GetByClassID(classID)
+	if err != nil {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik")
+		return nil
+	}
+
+	// Get class name
+	class, _ := botService.ClassRepo.GetByID(classID)
+	className := fmt.Sprintf("%d", classID)
+	if class != nil {
+		className = class.ClassName
+	}
+
+	// Get today's date in Uzbekistan time
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	today := time.Now().In(location)
+
+	// Create absent map for quick lookup
+	absentMap := make(map[int]bool)
+	for _, id := range stateData.AbsentList {
+		absentMap[id] = true
+	}
+
+	// Create inline keyboard with students - SIMPLIFIED UI
+	var buttons [][]tgbotapi.InlineKeyboardButton
+
+	text := fmt.Sprintf("📋 <b>Yo'qlama / Посещаемость</b>\n\n"+
+		"📚 Sinf / Класс: <b>%s</b>\n"+
+		"📅 Sana / Дата: <b>%s</b>\n\n"+
+		"<b>❌ tugmasini bosing - kelmaganlar uchun</b>\n"+
+		"Qolganlar avtomatik ✅ deb belgilanadi.\n\n"+
+		"<b>Нажмите ❌ для отсутствующих</b>\n"+
+		"Остальные автоматически будут ✅\n\n",
+		className, today.Format("02.01.2006"))
+
+	for i, student := range students {
+		var buttonText string
+		if absentMap[student.ID] {
+			buttonText = fmt.Sprintf("❌ %d. %s %s", i+1, student.FirstName, student.LastName)
+		} else {
+			buttonText = fmt.Sprintf("➖ %d. %s %s", i+1, student.FirstName, student.LastName)
+		}
+
+		button := tgbotapi.NewInlineKeyboardButtonData(
+			buttonText,
+			fmt.Sprintf("attendance_toggle_%d_%d", classID, student.ID),
+		)
+		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{button})
+	}
+
+	// Add finish button
+	finishButton := tgbotapi.NewInlineKeyboardButtonData(
+		"✅ Tugatish / Завершить",
+		fmt.Sprintf("attendance_finish_%d", classID),
+	)
+	buttons = append(buttons, []tgbotapi.InlineKeyboardButton{finishButton})
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+
+	// Update message
+	editMsg := tgbotapi.NewEditMessageText(chatID, callback.Message.MessageID, text)
+	editMsg.ParseMode = "HTML"
+	editMsg.ReplyMarkup = &keyboard
+
+	_, err = botService.Bot.Send(editMsg)
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+	return err
+}
+
+// HandleAttendanceFinish handles finishing attendance for a class
+func HandleAttendanceFinish(botService *services.BotService, callback *tgbotapi.CallbackQuery, classID int) error {
+	telegramID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	// Get state data
+	stateData, err := botService.StateManager.GetData(telegramID)
+	if err != nil || stateData == nil {
+		text := "❌ Xatolik: Sessiya tugagan. Iltimos, qaytadan boshlang.\n\n" +
+			"❌ Ошибка: Сессия истекла. Пожалуйста, начните заново."
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get teacher or admin
+	teacher, _ := botService.TeacherService.GetTeacherByTelegramID(telegramID)
+	admin, _ := botService.AdminRepo.GetByTelegramID(telegramID)
+
+	var teacherID *int
+	var adminID *int
+	var markedByName string
+
+	if teacher != nil {
+		teacherID = &teacher.ID
+		markedByName = teacher.FirstName + " " + teacher.LastName
+	} else if admin != nil {
+		adminID = &admin.ID
+		markedByName = "Admin"
+	} else {
+		text := "❌ Ruxsat yo'q / Нет разрешения"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get all students in class
+	students, err := botService.StudentRepo.GetByClassID(classID)
+	if err != nil {
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	// Get today's date in Uzbekistan time
+	location, _ := time.LoadLocation("Asia/Tashkent")
+	today := time.Now().In(location)
+	todayStr := today.Format("2006-01-02")
+
+	// Create absent map
+	absentMap := make(map[int]bool)
+	for _, id := range stateData.AbsentList {
+		absentMap[id] = true
+	}
+
+	// Create attendance records for all students
+	successCount := 0
+	errorCount := 0
+	updatedCount := 0
+	absentStudentNames := []string{}
+
+	for _, student := range students {
+		status := "present"
+		if absentMap[student.ID] {
+			status = "absent"
+			absentStudentNames = append(absentStudentNames, student.FirstName+" "+student.LastName)
+		}
+
+		req := &models.CreateAttendanceRequest{
+			StudentID:         student.ID,
+			Date:              todayStr,
+			Status:            status,
+			MarkedByTeacherID: teacherID,
+			MarkedByAdminID:   adminID,
+		}
+
+		_, err := botService.AttendanceService.CreateAttendance(req)
+		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint") {
+				// Already exists for today, skip
+				log.Printf("Attendance already exists for student %d on %s, skipping", student.ID, todayStr)
+				updatedCount++
+			} else {
+				errorCount++
+				log.Printf("Failed to create attendance for student %d: %v", student.ID, err)
+			}
+		} else {
+			successCount++
+			// Send notification if absent
+			if status == "absent" {
+				go notifyParentAboutAbsence(botService, student.ID, todayStr)
+			}
+		}
+	}
+
+	// Clear state
+	_ = botService.StateManager.Clear(telegramID)
+
+	// Get class name
+	class, _ := botService.ClassRepo.GetByID(classID)
+	className := fmt.Sprintf("%d", classID)
+	if class != nil {
+		className = class.ClassName
+	}
+
+	presentCount := len(students) - len(stateData.AbsentList)
+	absentCount := len(stateData.AbsentList)
+
+	// Success message
+	text := fmt.Sprintf(
+		"✅ <b>Yo'qlama saqlandi!</b>\n\n"+
+			"📚 Sinf: <b>%s</b>\n"+
+			"📅 Sana: <b>%s</b>\n\n"+
+			"✅ Keldi: <b>%d</b>\n"+
+			"❌ Kelmadi: <b>%d</b>\n\n"+
+			"✅ <b>Посещаемость сохранена!</b>",
+		className, today.Format("02.01.2006"),
+		presentCount, absentCount,
+	)
+
+	// Delete the selection message
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+	_, _ = botService.Bot.Request(deleteMsg)
+
+	// Return appropriate keyboard based on who finished attendance
+	var keyboard interface{}
+	if teacher != nil {
+		lang := i18n.GetLanguage(teacher.Language)
+		keyboard = utils.MakeTeacherMainMenuKeyboard(lang)
+	} else if admin != nil {
+		// Get admin's user record for language
+		user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+		lang := i18n.LanguageUzbek
+		if user != nil {
+			lang = i18n.GetLanguage(user.Language)
+		}
+		keyboard = utils.MakeMainMenuKeyboardWithAdmin(lang)
+	}
+
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅ Saqlandi!")
+
+	// Send to teacher/admin first
+	err = botService.TelegramService.SendMessage(chatID, text, keyboard)
+
+	// Send notification to ALL admins about attendance
+	go notifyAdminsAboutAttendance(botService, className, todayStr, markedByName, presentCount, absentCount, absentStudentNames)
+
+	return err
+}
+
+// notifyAdminsAboutAttendance sends notification to all admins about completed attendance
+func notifyAdminsAboutAttendance(botService *services.BotService, className, date, markedBy string, presentCount, absentCount int, absentStudentNames []string) {
+	// Get all admins
+	admins, err := botService.AdminRepo.GetAll()
+	if err != nil {
+		log.Printf("Failed to get admins for attendance notification: %v", err)
+		return
+	}
+
+	// Build notification text
+	text := fmt.Sprintf(
+		"📋 <b>Yo'qlama olingan / Посещаемость отмечена</b>\n\n"+
+			"📚 Sinf / Класс: <b>%s</b>\n"+
+			"📅 Sana / Дата: <b>%s</b>\n"+
+			"👤 Kim oldi / Отметил: <b>%s</b>\n\n"+
+			"✅ Keldi / Пришли: <b>%d</b>\n"+
+			"❌ Kelmadi / Отсутствуют: <b>%d</b>",
+		className, date, markedBy, presentCount, absentCount,
+	)
+
+	// Add absent student names if any
+	if len(absentStudentNames) > 0 {
+		text += "\n\n<b>Kelmaganlar / Отсутствующие:</b>\n"
+		for i, name := range absentStudentNames {
+			text += fmt.Sprintf("%d. %s\n", i+1, name)
+		}
+	}
+
+	// Send to all admins
+	for _, admin := range admins {
+		if admin.TelegramID == nil || *admin.TelegramID == 0 {
+			continue
+		}
+
+		_ = botService.TelegramService.SendMessage(*admin.TelegramID, text, nil)
+	}
 }
 
 // notifyParentAboutAbsence sends notification to parent about absence

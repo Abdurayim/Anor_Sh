@@ -39,13 +39,13 @@ func ValidateUzbekPhone(phone string) (string, error) {
 	// Ucell: 93, 94, 50, 55
 	// UMS/Humans: 66, 88
 	// Mobiuz: 97, 98, 99
-	// Uzmobile: 33, 95, 77, 71
+	// Uzmobile: 33, 95, 77, 71, 70
 	validOperators := []string{
-		"90", "91", "20",        // Beeline
-		"93", "94", "50", "55",  // Ucell
-		"66", "88",              // UMS/Humans
-		"97", "98", "99",        // Mobiuz
-		"33", "95", "77", "71",  // Uzmobile
+		"90", "91", "20",             // Beeline
+		"93", "94", "50", "55",       // Ucell
+		"66", "88",                   // UMS/Humans
+		"97", "98", "99",             // Mobiuz
+		"33", "95", "77", "71", "70", // Uzmobile
 	}
 	operatorCode := cleaned[4:6]
 

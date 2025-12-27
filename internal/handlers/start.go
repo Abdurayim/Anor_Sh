@@ -13,7 +13,20 @@ func HandleStart(botService *services.BotService, message *tgbotapi.Message) err
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
 
-	// FIRST: Check if this person is an admin
+	// FIRST: Check if this person is a teacher
+	teacher, _ := botService.TeacherService.GetTeacherByTelegramID(telegramID)
+	if teacher != nil {
+		// Teacher interface - show teacher menu
+		lang := i18n.GetLanguage(teacher.Language)
+		text := "👨‍🏫 <b>O'qituvchi paneli / Панель учителя</b>\n\n"
+		text += "Assalomu aleykum! / Здравствуйте!\n\n"
+		text += i18n.Get(i18n.MsgMainMenu, lang)
+
+		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		return botService.TelegramService.SendMessage(chatID, text, keyboard)
+	}
+
+	// SECOND: Check if this person is an admin
 	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
 	phoneNumber := ""
 	if user != nil {
@@ -119,7 +132,21 @@ func HandleCancelCommand(botService *services.BotService, message *tgbotapi.Mess
 	// Clear any active state
 	_ = botService.StateManager.Clear(telegramID)
 
-	// Get user
+	// Check if this is a teacher
+	teacher, _ := botService.TeacherService.GetTeacherByTelegramID(telegramID)
+	if teacher != nil {
+		lang := i18n.GetLanguage(teacher.Language)
+		var text string
+		if lang == i18n.LanguageUzbek {
+			text = "❌ Amal bekor qilindi."
+		} else {
+			text = "❌ Действие отменено."
+		}
+		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		return botService.TelegramService.SendMessage(chatID, text, keyboard)
+	}
+
+	// Get user (parent/admin)
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
 	if err != nil {
 		return err
@@ -134,10 +161,20 @@ func HandleCancelCommand(botService *services.BotService, message *tgbotapi.Mess
 	// Send cancellation message
 	var text string
 	if lang == i18n.LanguageUzbek {
-		text = "❌ Amal bekor qilindi.\n\nAsosiy menyuga qaytish uchun /start ni bosing."
+		text = "❌ Amal bekor qilindi."
 	} else {
-		text = "❌ Действие отменено.\n\nДля возврата в главное меню нажмите /start."
+		text = "❌ Действие отменено."
 	}
 
-	return botService.TelegramService.SendMessage(chatID, text, nil)
+	// Check if admin to show appropriate keyboard
+	var keyboard tgbotapi.ReplyKeyboardMarkup
+	if user != nil {
+		isAdmin, _ := botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		keyboard = utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
+	} else {
+		// No keyboard for unregistered users
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
+	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
