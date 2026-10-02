@@ -39,24 +39,24 @@ func (s *AnnouncementService) GetAnnouncementByID(id int) (*models.Announcement,
 	return announcement, nil
 }
 
-// GetActiveAnnouncements gets all active announcements with pagination
-func (s *AnnouncementService) GetActiveAnnouncements(limit, offset int) ([]*models.Announcement, error) {
-	announcements, err := s.repo.GetActive(limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get active announcements: %w", err)
-	}
-
-	return announcements, nil
+// GetActiveAnnouncements gets active announcements of a branch (branchID 0 = all branches)
+func (s *AnnouncementService) GetActiveAnnouncements(branchID, limit, offset int) ([]*models.Announcement, error) {
+	return s.repo.GetActive(branchID, limit, offset)
 }
 
-// GetAllAnnouncements gets all announcements with pagination (for admin)
-func (s *AnnouncementService) GetAllAnnouncements(limit, offset int) ([]*models.Announcement, error) {
-	announcements, err := s.repo.GetAll(limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get announcements: %w", err)
-	}
+// GetActiveAnnouncementsForParent gets the announcements a parent should see
+func (s *AnnouncementService) GetActiveAnnouncementsForParent(parentID, branchID, limit, offset int) ([]*models.Announcement, error) {
+	return s.repo.GetActiveForParent(parentID, branchID, limit, offset)
+}
 
-	return announcements, nil
+// GetAllAnnouncements gets announcements of a branch (branchID 0 = all branches)
+func (s *AnnouncementService) GetAllAnnouncements(branchID, limit, offset int) ([]*models.Announcement, error) {
+	return s.repo.GetAll(branchID, limit, offset)
+}
+
+// GetAnnouncementClassIDs returns target classes of an announcement (empty = whole branch)
+func (s *AnnouncementService) GetAnnouncementClassIDs(id int) ([]int, error) {
+	return s.repo.GetClassIDs(id)
 }
 
 // UpdateAnnouncement updates an existing announcement
@@ -89,22 +89,7 @@ func (s *AnnouncementService) DeleteAnnouncement(id int) error {
 	return nil
 }
 
-// CountAnnouncements counts total announcements
-func (s *AnnouncementService) CountAnnouncements() (int, error) {
-	count, err := s.repo.Count()
-	if err != nil {
-		return 0, fmt.Errorf("failed to count announcements: %w", err)
-	}
-
-	return count, nil
-}
-
-// CountActiveAnnouncements counts active announcements
-func (s *AnnouncementService) CountActiveAnnouncements() (int, error) {
-	count, err := s.repo.CountActive()
-	if err != nil {
-		return 0, fmt.Errorf("failed to count active announcements: %w", err)
-	}
-
-	return count, nil
+// CountAnnouncements counts announcements of a branch (branchID 0 = all branches)
+func (s *AnnouncementService) CountAnnouncements(branchID int) (int, error) {
+	return s.repo.Count(branchID)
 }

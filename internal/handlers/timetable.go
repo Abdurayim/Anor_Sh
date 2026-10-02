@@ -86,7 +86,7 @@ func showTimetableForStudent(botService *services.BotService, chatID int64, stud
 	}
 
 	// Get timetable for student's class
-	timetable, err := botService.TimetableService.GetTimetableByClassName(class.ClassName)
+	timetable, err := botService.TimetableService.GetTimetableByClassName(class.BranchID, class.ClassName)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -100,6 +100,10 @@ func showTimetableForStudent(botService *services.BotService, chatID int64, stud
 	// Send timetable file
 	caption := fmt.Sprintf("📅 Dars jadvali / Расписание уроков\nSinf / Класс: %s\nO'quvchi / Ученик: %s %s",
 		class.ClassName, student.LastName, student.FirstName)
+	// A photo file_id cannot be sent with sendDocument (and vice versa)
+	if timetable.FileType == "image" {
+		return botService.TelegramService.SendPhotoByFileID(chatID, timetable.TelegramFileID, caption)
+	}
 	return botService.TelegramService.SendDocumentByFileID(chatID, timetable.TelegramFileID, caption)
 }
 
@@ -172,7 +176,7 @@ func HandleUploadTimetableCommand(botService *services.BotService, message *tgbo
 	}
 
 	// Get all classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, message.From.ID))
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -266,7 +270,10 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 		// Photo/Image
 		photo := message.Photo[len(message.Photo)-1] // Get largest photo
 		fileID = photo.FileID
-		filename = fmt.Sprintf("timetable_%d.jpg", stateData.ClassID)
+		filename = "timetable.jpg"
+		if stateData.ClassID != nil {
+			filename = fmt.Sprintf("timetable_%d.jpg", *stateData.ClassID)
+		}
 		mimeType = "image/jpeg"
 		fileType = "image"
 	} else {
@@ -275,15 +282,13 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 	}
 
 	// Get admin record
-	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-	if err != nil {
-		log.Printf("Failed to get admin: %v", err)
-	}
+	admin := botService.GetAdmin(telegramID)
 
-	var adminID *int
-	if admin != nil {
-		adminID = &admin.ID
+	if admin == nil || stateData.ClassID == nil || !botService.ClassInBranch(*stateData.ClassID, admin.BranchID) {
+		_ = botService.StateManager.Clear(telegramID)
+		return botService.TelegramService.SendMessage(chatID, msgNotAllowed, nil)
 	}
+	adminID := &admin.ID
 
 	// Create timetable record
 	timetableReq := &models.CreateTimetableRequest{
@@ -295,7 +300,7 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 		UploadedByAdminID: adminID,
 	}
 
-	_, err = botService.TimetableService.CreateTimetable(timetableReq)
+	_, err := botService.TimetableService.CreateTimetable(timetableReq)
 	if err != nil {
 		log.Printf("Failed to save timetable: %v", err)
 		text := i18n.Get(i18n.ErrDatabaseError, lang)

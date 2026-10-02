@@ -47,8 +47,11 @@ func HandleAdminCommand(botService *services.BotService, message *tgbotapi.Messa
 		lang = i18n.GetLanguage(user.Language)
 	}
 
-	// Show admin panel
+	// Show admin panel with the admin's branch
 	text := i18n.Get(i18n.MsgAdminPanel, lang)
+	if admin := botService.GetAdmin(telegramID); admin != nil {
+		text = "🏫 <b>" + botService.BranchName(admin.BranchID, string(lang)) + "</b>\n\n" + text
+	}
 	keyboard := utils.MakeAdminKeyboard(lang)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
@@ -59,14 +62,14 @@ func HandleAdminUsersCallback(botService *services.BotService, callback *tgbotap
 	chatID := callback.Message.Chat.ID
 
 	// Get users
-	users, err := botService.UserService.GetAllUsers(20, 0)
+	users, err := botService.UserService.GetAllUsers(adminBranchID(botService, callback.From.ID), 20, 0)
 	if err != nil {
 		text := "Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Count total users
-	totalCount, _ := botService.UserService.CountUsers()
+	totalCount, _ := botService.UserService.CountUsers(adminBranchID(botService, callback.From.ID))
 
 	// Format user list
 	text := fmt.Sprintf("👥 Ro'yxatdan o'tgan foydalanuvchilar / Зарегистрированные пользователи\n\n")
@@ -116,14 +119,14 @@ func HandleAdminComplaintsCallback(botService *services.BotService, callback *tg
 	chatID := callback.Message.Chat.ID
 
 	// Get complaints with user info
-	complaints, err := botService.ComplaintService.GetAllComplaintsWithUser(10, 0)
+	complaints, err := botService.ComplaintService.GetAllComplaintsWithUser(adminBranchID(botService, callback.From.ID), 10, 0)
 	if err != nil {
 		text := "Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Count total complaints
-	totalCount, _ := botService.ComplaintService.CountComplaints()
+	totalCount, _ := botService.ComplaintService.CountComplaints(adminBranchID(botService, callback.From.ID))
 
 	// Format complaints list
 	text := fmt.Sprintf("📋 Shikoyatlar / Жалобы\n\n")
@@ -143,9 +146,9 @@ func HandleAdminComplaintsCallback(botService *services.BotService, callback *tg
 		if c.Status == models.StatusReviewed {
 			statusEmoji = "✅"
 			statusText = "Ko'rib chiqildi / Рассмотрено"
-		} else if c.Status == models.StatusArchived {
-			statusEmoji = "📦"
-			statusText = "Arxivlangan / Архивировано"
+		} else if c.Status == models.StatusResolved {
+			statusEmoji = "🏁"
+			statusText = "Hal qilindi / Решено"
 		}
 
 		text += fmt.Sprintf("%d. %s #%d\n", i+1, statusEmoji, c.ID)
@@ -154,7 +157,10 @@ func HandleAdminComplaintsCallback(botService *services.BotService, callback *tg
 			text += fmt.Sprintf(" (@%s)", c.TelegramUsername)
 		}
 		text += "\n"
-		preview := utils.TruncateText(c.ComplaintText, 60)
+		if c.StudentName != "" {
+			text += fmt.Sprintf("   👦 %s (%s)\n", utils.EscapeHTML(c.StudentName), utils.EscapeHTML(c.ClassName))
+		}
+		preview := utils.EscapeHTML(utils.TruncateText(c.ComplaintText, 60))
 		text += fmt.Sprintf("   💬 %s\n", preview)
 		text += fmt.Sprintf("   📅 %s\n", utils.FormatDateTime(c.CreatedAt))
 		text += fmt.Sprintf("   📊 %s\n\n", statusText)
@@ -172,18 +178,38 @@ func HandleAdminComplaintsCallback(botService *services.BotService, callback *tg
 func HandleAdminStatsCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	chatID := callback.Message.Chat.ID
 
-	// Get statistics
-	totalUsers, _ := botService.UserService.CountUsers()
-	totalComplaints, _ := botService.ComplaintService.CountComplaints()
-	pendingComplaints, _ := botService.ComplaintService.CountComplaintsByStatus(models.StatusPending)
-	reviewedComplaints, _ := botService.ComplaintService.CountComplaintsByStatus(models.StatusReviewed)
+	branchID := adminBranchID(botService, callback.From.ID)
 
-	// Format statistics
-	text := "📊 Statistika / Статистика\n\n"
-	text += fmt.Sprintf("👥 Foydalanuvchilar / Пользователи: %d\n\n", totalUsers)
+	totalUsers, _ := botService.UserService.CountUsers(branchID)
+	totalStudents, _ := botService.StudentService.CountStudents(branchID)
+	totalTeachers, _ := botService.TeacherService.CountTeachers(branchID)
+	totalClasses, _ := botService.ClassRepo.Count(branchID)
+	totalComplaints, _ := botService.ComplaintService.CountComplaints(branchID)
+	pendingComplaints, _ := botService.ComplaintService.CountComplaintsByStatus(branchID, models.StatusPending)
+	reviewedComplaints, _ := botService.ComplaintService.CountComplaintsByStatus(branchID, models.StatusReviewed)
+	totalProposals, _ := botService.ProposalService.CountProposals(branchID)
+
+	present, absent := 0, 0
+	if today, err := botService.AttendanceService.GetTodayAttendanceAllClasses(branchID); err == nil {
+		for _, a := range today {
+			if a.Status == "present" {
+				present++
+			} else {
+				absent++
+			}
+		}
+	}
+
+	text := fmt.Sprintf("📊 <b>Statistika / Статистика</b>\n🏫 %s\n\n", botService.BranchName(branchID, "uz"))
+	text += fmt.Sprintf("👨‍👩‍👧 Ota-onalar / Родители: %d\n", totalUsers)
+	text += fmt.Sprintf("👦 O'quvchilar / Ученики: %d\n", totalStudents)
+	text += fmt.Sprintf("👨‍🏫 O'qituvchilar / Учителя: %d\n", totalTeachers)
+	text += fmt.Sprintf("📚 Sinflar / Классы: %d\n\n", totalClasses)
+	text += fmt.Sprintf("📋 Bugungi davomat / Посещаемость сегодня: ✅ %d  ❌ %d\n\n", present, absent)
 	text += fmt.Sprintf("📋 Jami shikoyatlar / Всего жалоб: %d\n", totalComplaints)
 	text += fmt.Sprintf("⏳ Kutilmoqda / Ожидание: %d\n", pendingComplaints)
 	text += fmt.Sprintf("✅ Ko'rib chiqildi / Рассмотрено: %d\n", reviewedComplaints)
+	text += fmt.Sprintf("💡 Takliflar / Предложения: %d\n", totalProposals)
 
 	if totalComplaints > 0 {
 		percentage := float64(reviewedComplaints) / float64(totalComplaints) * 100
@@ -227,7 +253,7 @@ func HandleManageClassesCommand(botService *services.BotService, message *tgbota
 	}
 
 	// Get all classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, message.From.ID))
 	if err != nil {
 		text := "Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -251,11 +277,11 @@ func HandleManageClassesCommand(botService *services.BotService, message *tgbota
 	}
 
 	text += "Buyruqlar / Команды:\n"
-	text += "/add_class <sinf nomi> - Sinf qo'shish\n"
+	text += "/add_class &lt;sinf nomi&gt; - Sinf qo'shish\n"
 	text += "   Misol: /add_class 9A\n\n"
-	text += "/delete_class <sinf nomi> - Sinfni o'chirish\n"
+	text += "/delete_class &lt;sinf nomi&gt; - Sinfni o'chirish\n"
 	text += "   Misol: /delete_class 9A\n\n"
-	text += "/toggle_class <sinf nomi> - Sinfni faollashtirish/o'chirish\n"
+	text += "/toggle_class &lt;sinf nomi&gt; - Sinfni faollashtirish/o'chirish\n"
 	text += "   Misol: /toggle_class 9A"
 
 	_ = lang // Will be used in future for localized messages
@@ -301,7 +327,7 @@ func HandleAddClassCommand(botService *services.BotService, message *tgbotapi.Me
 	className = utils.SanitizeClassName(className)
 
 	// Create class
-	class, err := botService.ClassRepo.Create(className)
+	class, err := botService.ClassRepo.Create(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -346,7 +372,7 @@ func HandleDeleteClassCommand(botService *services.BotService, message *tgbotapi
 	}
 
 	// Delete class
-	err = botService.ClassRepo.Delete(className)
+	err = botService.ClassRepo.Delete(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -391,7 +417,7 @@ func HandleToggleClassCommand(botService *services.BotService, message *tgbotapi
 	}
 
 	// Toggle class
-	err = botService.ClassRepo.ToggleActive(className)
+	err = botService.ClassRepo.ToggleActive(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -435,7 +461,7 @@ func HandleAdminManageClassesCallback(botService *services.BotService, callback 
 	}
 
 	// Get all classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -682,7 +708,7 @@ func HandleClassToggleCallback(botService *services.BotService, callback *tgbota
 	className := callback.Data[13:] // Remove "class_toggle_" prefix
 
 	// Toggle class status
-	err = botService.ClassRepo.ToggleActive(className)
+	err = botService.ClassRepo.ToggleActive(adminBranchID(botService, callback.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
@@ -699,9 +725,6 @@ func HandleClassToggleCallback(botService *services.BotService, callback *tgbota
 // HandleClassDeleteCallback handles deleting a class
 func HandleClassDeleteCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	telegramID := callback.From.ID
-
-	// Debug log
-	fmt.Printf("[DEBUG] HandleClassDeleteCallback called. CallbackData: %s, UserID: %d\n", callback.Data, telegramID)
 
 	// Get user
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
@@ -726,29 +749,34 @@ func HandleClassDeleteCallback(botService *services.BotService, callback *tgbota
 		return nil
 	}
 
-	// Extract class ID from callback data
-	var classID int
-	n, err := fmt.Sscanf(callback.Data, "class_delete_%d", &classID)
-	fmt.Printf("[DEBUG] Parsed class ID: %d, n=%d, err=%v\n", classID, n, err)
-
-	if err != nil || n != 1 || classID == 0 {
-		text := "❌ Noto'g'ri ma'lumot / Неверные данные"
-		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
-		return fmt.Errorf("failed to parse class ID from callback data: %s", callback.Data)
-	}
-
-	// Delete class
-	fmt.Printf("[DEBUG] Attempting to delete class with ID: %d\n", classID)
-	err = botService.ClassRepo.DeleteByID(classID)
-	if err != nil {
-		fmt.Printf("[DEBUG] Delete failed: %v\n", err)
+	// Step 1 (class_delete_<id>) asks for confirmation; step 2 (class_delete_confirm_<id>) deletes.
+	// Deleting a class cascades to its students, parent links, grades, attendance and timetables.
+	if classID, ok := scan1(callback.Data, "class_delete_confirm_%d"); ok {
+		if err := botService.ClassRepo.DeleteByID(classID); err != nil {
+			_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik / Ошибка")
+			return err
+		}
 	} else {
-		fmt.Printf("[DEBUG] Delete successful for class ID: %d\n", classID)
-	}
-	if err != nil {
-		text := fmt.Sprintf("❌ Xatolik / Ошибка: %v", err)
-		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
-		return err
+		classID, ok := scan1(callback.Data, "class_delete_%d")
+		class, err := botService.ClassRepo.GetByID(classID)
+		if !ok || err != nil || class == nil {
+			return botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Sinf topilmadi / Класс не найден")
+		}
+		studentCount, _ := botService.StudentRepo.CountByClass(classID)
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+
+		text := fmt.Sprintf(
+			"⚠️ <b>%s</b> sinfini o'chirasizmi?\n"+
+				"Sinfdagi %d ta o'quvchi, ularning baholari, davomati va dars jadvali ham o'chiriladi.\n\n"+
+				"⚠️ Удалить класс <b>%s</b>?\n"+
+				"Будут удалены также %d учеников, их оценки, посещаемость и расписание.",
+			utils.EscapeHTML(class.ClassName), studentCount, utils.EscapeHTML(class.ClassName), studentCount,
+		)
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑 Ha, o'chirish / Да, удалить", fmt.Sprintf("class_delete_confirm_%d", classID)),
+			tgbotapi.NewInlineKeyboardButtonData("↩️ Bekor / Отмена", "admin_manage_classes"),
+		))
+		return botService.TelegramService.EditMessage(callback.Message.Chat.ID, callback.Message.MessageID, text, &keyboard)
 	}
 
 	// Answer callback with success
@@ -761,7 +789,7 @@ func HandleClassDeleteCallback(botService *services.BotService, callback *tgbota
 	}
 
 	// Get updated list of classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
 	if err != nil {
 		return err
 	}
@@ -893,7 +921,7 @@ func HandleClassNameInput(botService *services.BotService, message *tgbotapi.Mes
 	}
 
 	// Check if class already exists
-	exists, err := botService.ClassRepo.GetByName(className)
+	exists, err := botService.ClassRepo.GetByName(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -905,7 +933,7 @@ func HandleClassNameInput(botService *services.BotService, message *tgbotapi.Mes
 	}
 
 	// Create the class
-	class, err := botService.ClassRepo.Create(className)
+	class, err := botService.ClassRepo.Create(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -973,8 +1001,11 @@ func HandleAdminBackCallback(botService *services.BotService, callback *tgbotapi
 	// Answer callback
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
-	// Show admin panel
+	// Show admin panel with the admin's branch
 	text := i18n.Get(i18n.MsgAdminPanel, lang)
+	if admin := botService.GetAdmin(telegramID); admin != nil {
+		text = "🏫 <b>" + botService.BranchName(admin.BranchID, string(lang)) + "</b>\n\n" + text
+	}
 	keyboard := utils.MakeAdminKeyboard(lang)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
@@ -1017,14 +1048,14 @@ func HandleAdminProposalsCallback(botService *services.BotService, callback *tgb
 	chatID := callback.Message.Chat.ID
 
 	// Get proposals with user info
-	proposals, err := botService.ProposalService.GetAllProposals(10, 0)
+	proposals, err := botService.ProposalService.GetAllProposals(adminBranchID(botService, callback.From.ID), 10, 0)
 	if err != nil {
 		text := "Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Count total proposals
-	totalCount, _ := botService.ProposalService.CountProposals()
+	totalCount, _ := botService.ProposalService.CountProposals(adminBranchID(botService, callback.From.ID))
 
 	// Format proposals list
 	text := fmt.Sprintf("💡 Takliflar / Предложения\n\n")
@@ -1044,9 +1075,9 @@ func HandleAdminProposalsCallback(botService *services.BotService, callback *tgb
 		if p.Status == models.StatusReviewed {
 			statusEmoji = "✅"
 			statusText = "Ko'rib chiqildi / Рассмотрено"
-		} else if p.Status == models.StatusArchived {
-			statusEmoji = "📦"
-			statusText = "Arxivlangan / Архивировано"
+		} else if p.Status == models.StatusImplemented {
+			statusEmoji = "🏁"
+			statusText = "Amalga oshirildi / Реализовано"
 		}
 
 		// Get user info
@@ -1106,14 +1137,14 @@ func HandleAdminViewTimetablesCallback(botService *services.BotService, callback
 	}
 
 	// Get all timetables
-	timetables, err := botService.TimetableRepo.GetAll(50, 0)
+	timetables, err := botService.TimetableRepo.GetAll(adminBranchID(botService, callback.From.ID), 50, 0)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Get all classes for mapping
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -1256,7 +1287,7 @@ func HandleAdminManageTeachersCallback(botService *services.BotService, callback
 	chatID := callback.Message.Chat.ID
 
 	// Get all teachers
-	teachers, err := botService.TeacherRepo.GetAll(100, 0)
+	teachers, err := botService.TeacherRepo.GetAll(adminBranchID(botService, callback.From.ID), 100, 0)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
@@ -1317,12 +1348,23 @@ func HandleAdminManageTeachersCallback(botService *services.BotService, callback
 }
 
 // HandleAdminDeleteTeacherCallback handles admin delete teacher callback
-func HandleAdminDeleteTeacherCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery, teacherID int) error {
+func HandleAdminDeleteTeacherCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery, teacherID int, confirmed bool) error {
 	// Get teacher info before deleting
 	teacher, err := botService.TeacherRepo.GetByID(teacherID)
 	if err != nil || teacher == nil {
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ O'qituvchi topilmadi")
 		return nil
+	}
+
+	if !confirmed {
+		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
+		name := utils.EscapeHTML(teacher.LastName + " " + teacher.FirstName)
+		text := fmt.Sprintf("⚠️ O'qituvchi <b>%s</b> o'chirilsinmi?\n⚠️ Удалить учителя <b>%s</b>?", name, name)
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑 Ha / Да", fmt.Sprintf("admin_delete_teacher_confirm_%d", teacherID)),
+			tgbotapi.NewInlineKeyboardButtonData("↩️ Bekor / Отмена", "admin_manage_teachers"),
+		))
+		return botService.TelegramService.EditMessage(callback.Message.Chat.ID, callback.Message.MessageID, text, &keyboard)
 	}
 
 	// Delete the teacher
@@ -1361,7 +1403,7 @@ func HandleAdminExportAttendanceCallback(botService *services.BotService, callba
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
 	// Get today's attendance for all classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -1432,7 +1474,7 @@ func HandleAdminExportTestResultsCallback(botService *services.BotService, callb
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
 	// Get all classes for selection
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)

@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"parent-bot/internal/i18n"
@@ -40,8 +42,13 @@ func HandleViewAnnouncementsCommand(botService *services.BotService, message *tg
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// Get active announcements
-	announcements, err := botService.AnnouncementService.GetActiveAnnouncements(10, 0)
+	// Admins see their branch; parents see branch-wide and their children's class announcements
+	var announcements []*models.Announcement
+	if isAdmin {
+		announcements, err = botService.AnnouncementService.GetActiveAnnouncements(adminBranchID(botService, telegramID), 10, 0)
+	} else {
+		announcements, err = botService.AnnouncementService.GetActiveAnnouncementsForParent(user.ID, user.BranchID, 10, 0)
+	}
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -58,10 +65,10 @@ func HandleViewAnnouncementsCommand(botService *services.BotService, message *tg
 		text := fmt.Sprintf("📢 E'lon / Объявление #%d\n\n", i+1)
 
 		if announcement.Title != nil && *announcement.Title != "" {
-			text += fmt.Sprintf("<b>%s</b>\n\n", *announcement.Title)
+			text += fmt.Sprintf("<b>%s</b>\n\n", utils.EscapeHTML(*announcement.Title))
 		}
 
-		text += announcement.Content
+		text += utils.EscapeHTML(announcement.Content)
 		text += fmt.Sprintf("\n\n📅 %s", utils.FormatDateTime(announcement.CreatedAt))
 
 		// Create inline keyboard for admin with edit and delete buttons
@@ -310,7 +317,7 @@ func HandleAnnouncementFile(botService *services.BotService, message *tgbotapi.M
 		// Check if document is an image (including HEIC for iPhone)
 		mimeType := message.Document.MimeType
 		if mimeType == "image/jpeg" || mimeType == "image/jpg" || mimeType == "image/png" ||
-		   mimeType == "image/gif" || mimeType == "image/heic" || mimeType == "image/heif" {
+			mimeType == "image/gif" || mimeType == "image/heic" || mimeType == "image/heif" {
 			fileID = &message.Document.FileID
 			fname := message.Document.FileName
 			if fname == "" {
@@ -357,15 +364,13 @@ func saveAnnouncement(botService *services.BotService, telegramID int64, chatID 
 	lang := i18n.GetLanguage(stateData.Language)
 
 	// Get admin record
-	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-	if err != nil {
-		log.Printf("Failed to get admin: %v", err)
-	}
+	admin := botService.GetAdmin(telegramID)
 
-	var adminID *int
-	if admin != nil {
-		adminID = &admin.ID
+	if admin == nil {
+		_ = botService.StateManager.Clear(telegramID)
+		return botService.TelegramService.SendMessage(chatID, msgNotAllowed, nil)
 	}
+	adminID := &admin.ID
 
 	// Create announcement record
 	announcementReq := &models.CreateAnnouncementRequest{
@@ -375,6 +380,7 @@ func saveAnnouncement(botService *services.BotService, telegramID int64, chatID 
 		Filename:        filename,
 		FileType:        fileType,
 		PostedByAdminID: adminID,
+		BranchID:        admin.BranchID,
 	}
 
 	// Log file ID for debugging
@@ -411,90 +417,90 @@ func saveAnnouncement(botService *services.BotService, telegramID int64, chatID 
 	return nil
 }
 
-// notifyUsersAboutAnnouncement sends announcement to all registered users
+// notifyUsersAboutAnnouncement sends a new announcement to the parents it is meant for:
+// parents of the targeted classes, or every parent of the announcement's branch.
 func notifyUsersAboutAnnouncement(botService *services.BotService, announcement *models.Announcement) {
-	// Get all users
-	users, err := botService.UserService.GetAllUsers(1000, 0) // Get first 1000 users
+	var users []*models.User
+	classIDs, err := botService.AnnouncementService.GetAnnouncementClassIDs(announcement.ID)
 	if err != nil {
-		log.Printf("Failed to get users: %v", err)
+		log.Printf("Failed to get announcement classes: %v", err)
 		return
 	}
-
-	// Format announcement
-	text := "📢 YANGI E'LON / НОВОЕ ОБЪЯВЛЕНИЕ\n\n"
-
-	if announcement.Title != nil && *announcement.Title != "" {
-		text += fmt.Sprintf("<b>%s</b>\n\n", *announcement.Title)
-	}
-
-	text += announcement.Content
-	text += fmt.Sprintf("\n\n📅 %s", utils.FormatDateTime(announcement.CreatedAt))
-
-	// Send to all users
-	successCount := 0
-	failCount := 0
-	for _, user := range users {
-		chatID := user.TelegramID
-		lang := i18n.GetLanguage(user.Language)
-
-		// Check if user is admin to show appropriate keyboard
-		isAdmin, _ := botService.IsAdmin(user.PhoneNumber, user.TelegramID)
-		keyboard := utils.MakeMainMenuKeyboardForUser(lang, isAdmin)
-
-		if announcement.TelegramFileID != nil && *announcement.TelegramFileID != "" {
-			fileID := *announcement.TelegramFileID
-			// Check if it's a document or photo based on FileID prefix
-			isDocument := len(fileID) > 4 && fileID[:4] == "BQAC"
-
-			var sendErr error
-			if isDocument {
-				// Send as document with caption and keyboard
-				doc := tgbotapi.NewDocument(chatID, tgbotapi.FileID(fileID))
-				doc.Caption = text
-				doc.ParseMode = "HTML"
-				doc.ReplyMarkup = keyboard
-				_, sendErr = botService.Bot.Send(doc)
-			} else {
-				// Send as photo with caption and keyboard
-				photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
-				photo.Caption = text
-				photo.ParseMode = "HTML"
-				photo.ReplyMarkup = keyboard
-				_, sendErr = botService.Bot.Send(photo)
+	if len(classIDs) > 0 {
+		users, err = botService.UserService.GetParentsByClassIDs(classIDs)
+	} else {
+		const pageSize = 500
+		for offset := 0; ; offset += pageSize {
+			page, pageErr := botService.UserService.GetAllUsers(announcement.BranchID, pageSize, offset)
+			if pageErr != nil {
+				err = pageErr
+				break
 			}
-
-			if sendErr != nil {
-				log.Printf("Failed to send announcement with media to user %d (TelegramID: %d): %v", user.ID, chatID, sendErr)
-				// Try fallback to text only
-				msg := tgbotapi.NewMessage(chatID, text)
-				msg.ParseMode = "HTML"
-				msg.ReplyMarkup = keyboard
-				_, fallbackErr := botService.Bot.Send(msg)
-				if fallbackErr != nil {
-					log.Printf("Fallback also failed for user %d: %v", user.ID, fallbackErr)
-					failCount++
-				} else {
-					successCount++
-				}
-			} else {
-				successCount++
-			}
-		} else {
-			// Send text with keyboard
-			msg := tgbotapi.NewMessage(chatID, text)
-			msg.ParseMode = "HTML"
-			msg.ReplyMarkup = keyboard
-			_, err = botService.Bot.Send(msg)
-			if err != nil {
-				log.Printf("Failed to send announcement to user %d: %v", user.ID, err)
-				failCount++
-			} else {
-				successCount++
+			users = append(users, page...)
+			if len(page) < pageSize {
+				break
 			}
 		}
 	}
+	if err != nil {
+		log.Printf("Failed to get announcement recipients: %v", err)
+		return
+	}
 
-	log.Printf("Announcement notification complete: %d successful, %d failed out of %d users", successCount, failCount, len(users))
+	text := "📢 YANGI E'LON / НОВОЕ ОБЪЯВЛЕНИЕ\n\n"
+	if announcement.Title != nil && *announcement.Title != "" {
+		text += fmt.Sprintf("<b>%s</b>\n\n", utils.EscapeHTML(*announcement.Title))
+	}
+	text += utils.EscapeHTML(announcement.Content)
+	text += fmt.Sprintf("\n\n📅 %s", utils.FormatDateTime(announcement.CreatedAt))
+
+	successCount, failCount := 0, 0
+	for _, user := range users {
+		if sendAnnouncement(botService, user.TelegramID, announcement, text) {
+			successCount++
+		} else {
+			failCount++
+		}
+		// Stay well below Telegram's broadcast limit (~30 messages/second)
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	log.Printf("Announcement #%d delivered: %d ok, %d failed of %d parents", announcement.ID, successCount, failCount, len(users))
+}
+
+// sendAnnouncement sends announcement text (already HTML-escaped) with its attachment.
+// A caption is limited to 1024 characters, so long texts are sent as a separate message.
+func sendAnnouncement(botService *services.BotService, chatID int64, announcement *models.Announcement, text string) bool {
+	if announcement.TelegramFileID != nil && *announcement.TelegramFileID != "" {
+		fileID := *announcement.TelegramFileID
+		caption := text
+		if len([]rune(caption)) > 1000 {
+			caption = ""
+		}
+
+		var chattable tgbotapi.Chattable
+		// Document file IDs start with "BQAC", photo file IDs with "AgAC"
+		if strings.HasPrefix(fileID, "BQAC") {
+			doc := tgbotapi.NewDocument(chatID, tgbotapi.FileID(fileID))
+			doc.Caption, doc.ParseMode = caption, "HTML"
+			chattable = doc
+		} else {
+			photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
+			photo.Caption, photo.ParseMode = caption, "HTML"
+			chattable = photo
+		}
+		if _, err := botService.Bot.Send(chattable); err != nil {
+			log.Printf("Failed to send announcement media to %d: %v", chatID, err)
+		} else if caption != "" {
+			return true
+		}
+	}
+
+	if err := botService.TelegramService.SendMessage(chatID, text, nil); err != nil {
+		log.Printf("Failed to send announcement to %d: %v", chatID, err)
+		return false
+	}
+	return true
 }
 
 // HandleAnnouncementDeleteCallback handles announcement deletion request
@@ -607,7 +613,7 @@ func HandleAnnouncementEditCallback(botService *services.BotService, callback *t
 	// Show current announcement and ask for new content
 	text := "✏️ E'lonni tahrirlash / Редактировать объявление\n\n"
 	text += "📄 Joriy matn / Текущий текст:\n\n"
-	text += announcement.Content
+	text += utils.EscapeHTML(announcement.Content)
 	text += "\n\n━━━━━━━━━━━━━━━\n\n"
 	text += "📝 Yangi matnni kiriting / Введите новый текст:"
 
@@ -735,7 +741,7 @@ func HandleAdminViewAnnouncementsCallback(botService *services.BotService, callb
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
 	// Get all announcements (not just active)
-	announcements, err := botService.AnnouncementService.GetAllAnnouncements(20, 0)
+	announcements, err := botService.AnnouncementService.GetAllAnnouncements(adminBranchID(botService, callback.From.ID), 20, 0)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -757,10 +763,10 @@ func HandleAdminViewAnnouncementsCallback(botService *services.BotService, callb
 		text := fmt.Sprintf("%s E'lon / Объявление #%d (ID: %d)\n\n", statusEmoji, i+1, announcement.ID)
 
 		if announcement.Title != nil && *announcement.Title != "" {
-			text += fmt.Sprintf("<b>%s</b>\n\n", *announcement.Title)
+			text += fmt.Sprintf("<b>%s</b>\n\n", utils.EscapeHTML(*announcement.Title))
 		}
 
-		text += announcement.Content
+		text += utils.EscapeHTML(announcement.Content)
 		text += fmt.Sprintf("\n\n📅 %s", utils.FormatDateTime(announcement.CreatedAt))
 
 		if !announcement.IsActive {

@@ -21,6 +21,13 @@ func RouteByState(botService *services.BotService, message *tgbotapi.Message, st
 	case models.StateAwaitingPhone:
 		return HandlePhoneNumber(botService, message, stateData)
 
+	case stateSuperAdminAwaitingAdminPhone:
+		return HandleSuperAdminAdminPhone(botService, message, stateData)
+
+	case models.StateSelectingBranch:
+		// Waiting for branch button; show the choice again
+		return sendBranchSelection(botService, message.Chat.ID, i18n.GetLanguage(stateData.Language))
+
 	case models.StateAwaitingChildName:
 		return HandleChildName(botService, message, stateData)
 
@@ -212,6 +219,37 @@ func HandleRegisteredUserMessage(botService *services.BotService, message *tgbot
 // HandleCallbackQuery handles inline button clicks
 func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
 	data := callback.Data
+
+	if !authorizeCallback(botService, callback) {
+		return botService.TelegramService.AnswerCallbackQuery(callback.ID, msgNotAllowed)
+	}
+
+	// Super admin: dashboard, statistics, branch admins
+	if strings.HasPrefix(data, "sa_") {
+		return HandleSuperAdminCallback(botService, callback)
+	}
+
+	// Parent registration: branch selection
+	if strings.HasPrefix(data, "branch_select_") {
+		return HandleBranchSelection(botService, callback)
+	}
+
+	// A parent without a branch must pick one before using any other button
+	if callback.Message != nil && !strings.HasPrefix(data, "lang_") {
+		msg := &tgbotapi.Message{From: callback.From, Chat: callback.Message.Chat}
+		if handled, err := ensureParentBranch(botService, msg); handled {
+			_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "🏫")
+			return err
+		}
+	}
+
+	// Parent: paginated complaint / proposal history
+	if offset, ok := scan1(data, "complaints_page_%d"); ok {
+		return HandleComplaintsPageCallback(botService, callback, offset)
+	}
+	if offset, ok := scan1(data, "proposals_page_%d"); ok {
+		return HandleProposalsPageCallback(botService, callback, offset)
+	}
 
 	// Language selection
 	if data == "lang_uz" || data == "lang_ru" {
@@ -461,10 +499,11 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	}
 
 	// Admin delete teacher callback
-	if strings.HasPrefix(data, "admin_delete_teacher_") {
-		var teacherID int
-		fmt.Sscanf(data, "admin_delete_teacher_%d", &teacherID)
-		return HandleAdminDeleteTeacherCallback(botService, callback, teacherID)
+	if teacherID, ok := scan1(data, "admin_delete_teacher_confirm_%d"); ok {
+		return HandleAdminDeleteTeacherCallback(botService, callback, teacherID, true)
+	}
+	if teacherID, ok := scan1(data, "admin_delete_teacher_%d"); ok {
+		return HandleAdminDeleteTeacherCallback(botService, callback, teacherID, false)
 	}
 
 	// Admin export attendance callback
@@ -597,7 +636,7 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	}
 
 	// View class grades callback
-	if len(data) > 17 && data[:17] == "view_grades_class_" {
+	if strings.HasPrefix(data, "view_grades_class_") {
 		var classID int
 		fmt.Sscanf(data, "view_grades_class_%d", &classID)
 		return HandleViewClassGradesCallback(botService, callback, classID)

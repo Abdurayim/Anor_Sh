@@ -107,8 +107,8 @@ func (s *AttendanceService) GetTodayAttendanceByClass(classID int) ([]*models.At
 }
 
 // GetTodayAttendanceAllClasses retrieves today's attendance for all classes
-func (s *AttendanceService) GetTodayAttendanceAllClasses() ([]*models.AttendanceDetailed, error) {
-	return s.repo.GetTodayAttendanceAllClasses()
+func (s *AttendanceService) GetTodayAttendanceAllClasses(branchID int) ([]*models.AttendanceDetailed, error) {
+	return s.repo.GetTodayAttendanceAllClasses(branchID)
 }
 
 // UpdateAttendance updates an attendance record

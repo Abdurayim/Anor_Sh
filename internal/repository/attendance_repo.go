@@ -316,8 +316,9 @@ func (r *AttendanceRepository) GetTodayAttendanceByClass(classID int) ([]*models
 	return r.GetByClassIDAndDate(classID, today)
 }
 
-// GetTodayAttendanceAllClasses retrieves today's attendance for all classes
-func (r *AttendanceRepository) GetTodayAttendanceAllClasses() ([]*models.AttendanceDetailed, error) {
+// GetTodayAttendanceAllClasses retrieves today's attendance for all classes of a branch
+// (branchID 0 = all branches)
+func (r *AttendanceRepository) GetTodayAttendanceAllClasses(branchID int) ([]*models.AttendanceDetailed, error) {
 	// Use Uzbekistan timezone (Asia/Tashkent UTC+5) to match attendance taking
 	location, _ := time.LoadLocation("Asia/Tashkent")
 	today := time.Now().In(location).Format("2006-01-02")
@@ -325,10 +326,10 @@ func (r *AttendanceRepository) GetTodayAttendanceAllClasses() ([]*models.Attenda
 		SELECT id, student_id, first_name, last_name, class_id, class_name,
 		       date, status, created_at
 		FROM v_attendance_detailed
-		WHERE date(date) = date(?)
+		WHERE date(date) = date(?) AND (? = 0 OR branch_id = ?)
 		ORDER BY class_name, last_name, first_name
 	`
-	rows, err := r.db.Query(query, today)
+	rows, err := r.db.Query(query, today, branchID, branchID)
 	if err != nil {
 		return nil, err
 	}

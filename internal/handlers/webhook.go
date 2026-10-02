@@ -2,11 +2,37 @@ package handlers
 
 import (
 	"log"
+	"runtime/debug"
+	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"parent-bot/internal/i18n"
 	"parent-bot/internal/services"
 )
+
+// userLocks serializes updates of the same user. In webhook mode updates arrive concurrently,
+// and the conversation state is read-modify-write, so two fast taps could overwrite each other
+// (or double-submit a complaint).
+var userLocks sync.Map // int64 -> *sync.Mutex
+
+// SafeHandleUpdate handles an update with per-user serialization and panic recovery,
+// so one bad update cannot take the whole bot down.
+func SafeHandleUpdate(botService *services.BotService, update tgbotapi.Update) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC while handling update %d: %v\n%s", update.UpdateID, r, debug.Stack())
+		}
+	}()
+
+	if user := update.SentFrom(); user != nil {
+		lock, _ := userLocks.LoadOrStore(user.ID, &sync.Mutex{})
+		mu := lock.(*sync.Mutex)
+		mu.Lock()
+		defer mu.Unlock()
+	}
+
+	HandleUpdate(botService, update)
+}
 
 // HandleUpdate is the main update handler that routes all Telegram updates
 func HandleUpdate(botService *services.BotService, update tgbotapi.Update) {
@@ -42,6 +68,11 @@ func HandleMessage(botService *services.BotService, message *tgbotapi.Message) e
 
 	telegramID := message.From.ID
 
+	// A parent without a branch (registered before branches existed) must pick one first
+	if handled, err := ensureParentBranch(botService, message); handled {
+		return err
+	}
+
 	// Handle commands first
 	if message.IsCommand() {
 		return HandleCommand(botService, message)
@@ -49,6 +80,9 @@ func HandleMessage(botService *services.BotService, message *tgbotapi.Message) e
 
 	// Check for critical button presses that should override state (like admin panel)
 	buttonText := message.Text
+	if buttonText == btnSuperAdminPanel {
+		return HandleSuperAdminPanel(botService, message)
+	}
 	if buttonText == "👨‍💼 Ma'muriyat paneli" || buttonText == "👨‍💼 Панель администратора" {
 		_ = botService.StateManager.Clear(telegramID)
 		return HandleAdminCommand(botService, message)
@@ -131,6 +165,10 @@ func isParentMenuButton(buttonText string) bool {
 
 // HandleCommand handles bot commands
 func HandleCommand(botService *services.BotService, message *tgbotapi.Message) error {
+	if !authorizeCommand(botService, message) {
+		return botService.TelegramService.SendMessage(message.Chat.ID, msgNotAllowed, nil)
+	}
+
 	switch message.Command() {
 	case "start":
 		return HandleStart(botService, message)
@@ -150,6 +188,8 @@ func HandleCommand(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleViewAnnouncementsCommand(botService, message)
 	case "admin":
 		return HandleAdminCommand(botService, message)
+	case "superadmin":
+		return HandleSuperAdminPanel(botService, message)
 	case "admin_link":
 		return HandleAdminLinkCommand(botService, message)
 	case "manage_classes":

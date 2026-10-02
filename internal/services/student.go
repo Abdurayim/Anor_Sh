@@ -99,13 +99,13 @@ func (s *StudentService) HardDeleteStudent(id int) error {
 }
 
 // GetAllStudents retrieves all students with pagination
-func (s *StudentService) GetAllStudents(limit, offset int) ([]*models.StudentWithClass, error) {
-	return s.repo.GetAll(limit, offset)
+func (s *StudentService) GetAllStudents(branchID, limit, offset int) ([]*models.StudentWithClass, error) {
+	return s.repo.GetAll(branchID, limit, offset)
 }
 
-// CountStudents returns total number of active students
-func (s *StudentService) CountStudents() (int, error) {
-	return s.repo.Count()
+// CountStudents returns number of active students in a branch (branchID 0 = all branches)
+func (s *StudentService) CountStudents(branchID int) (int, error) {
+	return s.repo.Count(branchID)
 }
 
 // CountStudentsByClass returns number of students in a class
@@ -208,4 +208,3 @@ func (s *StudentService) CanParentAddChild(parentID int) (bool, error) {
 	}
 	return count < 4, nil
 }
-

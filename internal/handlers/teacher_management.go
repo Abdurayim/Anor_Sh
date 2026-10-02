@@ -120,6 +120,11 @@ func HandleTeacherPhone(botService *services.BotService, message *tgbotapi.Messa
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
+	if existingAdmin, _ := botService.AdminRepo.GetByPhoneNumber(validPhone); existingAdmin != nil {
+		text := "❌ Bu raqam admin raqami, o'qituvchi qilib bo'lmaydi.\n❌ Это номер администратора, его нельзя добавить учителем."
+		return botService.TelegramService.SendMessage(chatID, text, nil)
+	}
+
 	// Check if phone already exists
 	existingTeacher, err := botService.TeacherRepo.GetByPhone(validPhone)
 	if err != nil {
@@ -134,8 +139,8 @@ func HandleTeacherPhone(botService *services.BotService, message *tgbotapi.Messa
 	}
 
 	// Get admin info
-	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-	if err != nil || admin == nil {
+	admin := botService.GetAdmin(telegramID)
+	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		_ = botService.StateManager.Clear(telegramID)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -143,7 +148,7 @@ func HandleTeacherPhone(botService *services.BotService, message *tgbotapi.Messa
 
 	// Create teacher with default language "uz"
 	language := "uz"
-	teacherID, err := botService.TeacherRepo.Create(firstName, lastName, validPhone, language, admin.ID)
+	teacherID, err := botService.TeacherRepo.Create(firstName, lastName, validPhone, language, admin.ID, admin.BranchID)
 	if err != nil {
 		log.Printf("Failed to create teacher: %v", err)
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
@@ -195,7 +200,7 @@ func HandleListTeachersCommand(botService *services.BotService, message *tgbotap
 	}
 
 	// Get all teachers
-	teachers, err := botService.TeacherRepo.GetAll(100, 0)
+	teachers, err := botService.TeacherRepo.GetAll(adminBranchID(botService, message.From.ID), 100, 0)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -467,7 +472,7 @@ func HandleTeacherManageStudentsCommand(botService *services.BotService, message
 	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -822,7 +827,7 @@ func HandleTeacherManageStudentsBackCallback(botService *services.BotService, ca
 	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(staffBranchID(botService, callback.From.ID))
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
@@ -904,7 +909,7 @@ func HandleTeacherPostAnnouncementCommand(botService *services.BotService, messa
 	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка bazы danних"
 		return botService.TelegramService.SendMessage(chatID, text, nil)

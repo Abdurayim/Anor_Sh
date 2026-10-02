@@ -39,7 +39,7 @@ func (s *TeacherService) CreateTeacher(req *models.CreateTeacherRequest) (int64,
 	}
 
 	// Create teacher
-	return s.repo.Create(req.FirstName, req.LastName, req.PhoneNumber, req.Language, req.AddedByAdminID)
+	return s.repo.Create(req.FirstName, req.LastName, req.PhoneNumber, req.Language, req.AddedByAdminID, req.BranchID)
 }
 
 // GetTeacherByID retrieves a teacher by ID
@@ -115,19 +115,19 @@ func (s *TeacherService) DeactivateTeacher(id int) error {
 	})
 }
 
-// GetAllTeachers retrieves all teachers with pagination
-func (s *TeacherService) GetAllTeachers(limit, offset int) ([]*models.Teacher, error) {
-	return s.repo.GetAll(limit, offset)
+// GetAllTeachers retrieves teachers of a branch with pagination (branchID 0 = all branches)
+func (s *TeacherService) GetAllTeachers(branchID, limit, offset int) ([]*models.Teacher, error) {
+	return s.repo.GetAll(branchID, limit, offset)
 }
 
-// GetActiveTeachers retrieves all active teachers
-func (s *TeacherService) GetActiveTeachers() ([]*models.Teacher, error) {
-	return s.repo.GetActiveTeachers()
+// GetActiveTeachers retrieves active teachers of a branch (branchID 0 = all branches)
+func (s *TeacherService) GetActiveTeachers(branchID int) ([]*models.Teacher, error) {
+	return s.repo.GetActiveTeachers(branchID)
 }
 
-// CountTeachers returns total number of teachers
-func (s *TeacherService) CountTeachers() (int, error) {
-	return s.repo.Count()
+// CountTeachers returns number of teachers in a branch (branchID 0 = all branches)
+func (s *TeacherService) CountTeachers(branchID int) (int, error) {
+	return s.repo.Count(branchID)
 }
 
 // AssignToClass assigns a teacher to a class
@@ -171,19 +171,6 @@ func (s *TeacherService) GetClassTeachers(classID int) ([]*models.Teacher, error
 // IsTeacherAssignedToClass checks if a teacher is assigned to a class
 func (s *TeacherService) IsTeacherAssignedToClass(teacherID, classID int) (bool, error) {
 	return s.repo.IsTeacherAssignedToClass(teacherID, classID)
-}
-
-// IsTeacher checks if a phone number or telegram ID belongs to a teacher
-func (s *TeacherService) IsTeacher(phoneNumber string, telegramID int64) (bool, *models.Teacher, error) {
-	// Normalize phone if provided
-	if phoneNumber != "" {
-		normalized, err := validator.ValidateUzbekPhone(phoneNumber)
-		if err == nil {
-			phoneNumber = normalized
-		}
-	}
-
-	return s.repo.IsTeacher(phoneNumber, telegramID)
 }
 
 // GetTeacherFullName returns the full name of a teacher
