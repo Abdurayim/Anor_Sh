@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -70,11 +71,17 @@ func GenerateProposalCaption(childName, childClass, phoneNumber string) string {
 
 // TruncateText truncates text to specified length
 func TruncateText(text string, maxLen int) string {
-	if len(text) <= maxLen {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
 		return text
 	}
 
-	return text[:maxLen] + "..."
+	return string(runes[:maxLen]) + "..."
+}
+
+// EscapeHTML escapes user-provided text for messages sent with ParseMode HTML.
+func EscapeHTML(text string) string {
+	return html.EscapeString(text)
 }
 
 // FormatPhoneNumber formats phone number for display

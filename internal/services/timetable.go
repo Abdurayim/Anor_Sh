@@ -61,8 +61,8 @@ func (s *TimetableService) GetTimetableByClassID(classID int) (*models.Timetable
 }
 
 // GetTimetableByClassName gets the latest timetable for a class by name
-func (s *TimetableService) GetTimetableByClassName(className string) (*models.Timetable, error) {
-	timetable, err := s.repo.GetByClassName(className)
+func (s *TimetableService) GetTimetableByClassName(branchID int, className string) (*models.Timetable, error) {
+	timetable, err := s.repo.GetByClassName(branchID, className)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timetable by class name: %w", err)
 	}
@@ -70,9 +70,9 @@ func (s *TimetableService) GetTimetableByClassName(className string) (*models.Ti
 	return timetable, nil
 }
 
-// GetAllTimetables gets all timetables with pagination
-func (s *TimetableService) GetAllTimetables(limit, offset int) ([]*models.Timetable, error) {
-	timetables, err := s.repo.GetAll(limit, offset)
+// GetAllTimetables gets timetables of a branch with pagination (branchID 0 = all branches)
+func (s *TimetableService) GetAllTimetables(branchID, limit, offset int) ([]*models.Timetable, error) {
+	timetables, err := s.repo.GetAll(branchID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timetables: %w", err)
 	}

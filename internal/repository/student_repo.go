@@ -164,8 +164,8 @@ func (r *StudentRepository) SearchByName(classID int, searchTerm string) ([]*mod
 func (r *StudentRepository) Update(id int, req *models.UpdateStudentRequest) error {
 	query := `
 		UPDATE students
-		SET first_name = COALESCE(?, first_name),
-		    last_name = COALESCE(?, last_name),
+		SET first_name = COALESCE(NULLIF(?, ''), first_name),
+		    last_name = COALESCE(NULLIF(?, ''), last_name),
 		    class_id = COALESCE(?, class_id),
 		    is_active = COALESCE(?, is_active),
 		    updated_at = CURRENT_TIMESTAMP
@@ -190,15 +190,15 @@ func (r *StudentRepository) HardDelete(id int) error {
 }
 
 // GetAll retrieves all students with pagination
-func (r *StudentRepository) GetAll(limit, offset int) ([]*models.StudentWithClass, error) {
+func (r *StudentRepository) GetAll(branchID, limit, offset int) ([]*models.StudentWithClass, error) {
 	query := `
 		SELECT id, first_name, last_name, class_id, class_name, is_active, created_at
 		FROM v_students_with_class
-		WHERE is_active = 1
+		WHERE is_active = 1 AND (? = 0 OR branch_id = ?)
 		ORDER BY class_name, last_name, first_name
 		LIMIT ? OFFSET ?
 	`
-	rows, err := r.db.Query(query, limit, offset)
+	rows, err := r.db.Query(query, branchID, branchID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +225,11 @@ func (r *StudentRepository) GetAll(limit, offset int) ([]*models.StudentWithClas
 	return students, nil
 }
 
-// Count returns total number of active students
-func (r *StudentRepository) Count() (int, error) {
+// Count returns number of active students in a branch (branchID 0 = all branches)
+func (r *StudentRepository) Count(branchID int) (int, error) {
 	var count int
-	query := "SELECT COUNT(*) FROM students WHERE is_active = 1"
-	err := r.db.QueryRow(query).Scan(&count)
+	query := "SELECT COUNT(*) FROM v_students_with_class WHERE is_active = 1 AND (? = 0 OR branch_id = ?)"
+	err := r.db.QueryRow(query, branchID, branchID).Scan(&count)
 	return count, err
 }
 

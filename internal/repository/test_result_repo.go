@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"parent-bot/internal/models"
@@ -242,8 +243,8 @@ func (r *TestResultRepository) Update(id int, req *models.UpdateTestResultReques
 
 	query := `
 		UPDATE test_results
-		SET subject_name = COALESCE(?, subject_name),
-		    score = COALESCE(?, score),
+		SET subject_name = COALESCE(NULLIF(?, ''), subject_name),
+		    score = COALESCE(NULLIF(?, ''), score),
 		    test_date = COALESCE(?, test_date),
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -313,4 +314,23 @@ func (r *TestResultRepository) GetLatestByStudent(studentID int, limit int) ([]*
 	}
 
 	return results, nil
+}
+
+// AverageNumericScore returns the average of numeric scores given since the date
+// (YYYY-MM-DD) in a branch (branchID 0 = all branches) and how many scores were counted.
+// Non-numeric scores (e.g. "A+") are skipped.
+func (r *TestResultRepository) AverageNumericScore(branchID int, since string) (float64, int, error) {
+	var avg sql.NullFloat64
+	var n int
+	err := r.db.QueryRow(`
+		SELECT AVG(CAST(score AS REAL)), COUNT(*)
+		FROM v_test_results_detailed
+		WHERE score GLOB '[0-9]*' AND score NOT GLOB '*[^0-9.]*'
+		  AND date(test_date) >= date(?)
+		  AND (? = 0 OR branch_id = ?)
+	`, since, branchID, branchID).Scan(&avg, &n)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to average scores: %w", err)
+	}
+	return avg.Float64, n, nil
 }

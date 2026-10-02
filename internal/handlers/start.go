@@ -13,6 +13,14 @@ func HandleStart(botService *services.BotService, message *tgbotapi.Message) err
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
 
+	// Super admin: statistics of all branches and admin management
+	if botService.GetSuperAdmin(telegramID) != nil {
+		_ = botService.StateManager.Clear(telegramID)
+		text := "👑 <b>Super admin</b>\n\nAssalomu aleykum! / Здравствуйте!\n\n" +
+			"Panelni ochish uchun pastdagi tugmani bosing.\nНажмите кнопку ниже, чтобы открыть панель."
+		return botService.TelegramService.SendMessage(chatID, text, makeSuperAdminReplyKeyboard())
+	}
+
 	// FIRST: Check if this person is a teacher
 	teacher, _ := botService.TeacherService.GetTeacherByTelegramID(telegramID)
 	if teacher != nil {

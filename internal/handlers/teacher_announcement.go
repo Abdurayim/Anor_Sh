@@ -56,7 +56,7 @@ func HandleTeacherAnnouncementToggleClass(botService *services.BotService, callb
 
 	// Re-render the class selection screen with updated checkboxes
 	// Teachers can see all classes
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(staffBranchID(botService, callback.From.ID))
 	if err != nil {
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Xatolik")
 		return nil
@@ -477,6 +477,16 @@ func saveTeacherAnnouncement(botService *services.BotService, telegramID int64, 
 		FileType:          fileType,
 		PostedByTeacherID: &teacher.ID,
 		ClassIDs:          stateData.SelectedClasses,
+		BranchID:          teacher.BranchID,
+	}
+
+	if len(req.ClassIDs) == 0 {
+		return botService.TelegramService.SendMessage(chatID, "❌ Sinf tanlanmagan / Класс не выбран", nil)
+	}
+	for _, classID := range req.ClassIDs {
+		if !botService.ClassInBranch(classID, teacher.BranchID) {
+			return botService.TelegramService.SendMessage(chatID, msgNotAllowed, nil)
+		}
 	}
 
 	announcement, err := botService.AnnouncementService.CreateAnnouncement(req)
@@ -488,6 +498,9 @@ func saveTeacherAnnouncement(botService *services.BotService, telegramID int64, 
 
 	// Clear state
 	_ = botService.StateManager.Clear(telegramID)
+
+	// Deliver to parents of the selected classes
+	go notifyUsersAboutAnnouncement(botService, announcement)
 
 	// Get class names
 	classNames := []string{}

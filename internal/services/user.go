@@ -107,9 +107,9 @@ func (s *UserService) UpdateUserByTelegramID(telegramID int64, req *models.Updat
 	return nil
 }
 
-// GetAllUsers gets all users with pagination
-func (s *UserService) GetAllUsers(limit, offset int) ([]*models.User, error) {
-	users, err := s.repo.GetAll(limit, offset)
+// GetAllUsers gets users of a branch with pagination (branchID 0 = all branches)
+func (s *UserService) GetAllUsers(branchID, limit, offset int) ([]*models.User, error) {
+	users, err := s.repo.GetAll(branchID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users: %w", err)
 	}
@@ -137,9 +137,9 @@ func (s *UserService) GetParentsByClassIDs(classIDs []int) ([]*models.User, erro
 	return users, nil
 }
 
-// CountUsers counts total users
-func (s *UserService) CountUsers() (int, error) {
-	count, err := s.repo.Count()
+// CountUsers counts users of a branch (branchID 0 = all branches)
+func (s *UserService) CountUsers(branchID int) (int, error) {
+	count, err := s.repo.Count(branchID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count users: %w", err)
 	}

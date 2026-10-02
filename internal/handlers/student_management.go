@@ -39,7 +39,7 @@ func HandleAddStudentCommand(botService *services.BotService, message *tgbotapi.
 	}
 
 	// Get active classes
-	classes, err := botService.ClassRepo.GetActive()
+	classes, err := botService.ClassRepo.GetActive(adminBranchID(botService, message.From.ID))
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -98,7 +98,7 @@ func HandleStudentInfo(botService *services.BotService, message *tgbotapi.Messag
 	lastName := strings.Join(nameParts[1:], " ")
 
 	// Verify class exists
-	class, err := botService.ClassRepo.GetByName(className)
+	class, err := botService.ClassRepo.GetByName(adminBranchID(botService, message.From.ID), className)
 	if err != nil {
 		return err
 	}
@@ -115,8 +115,8 @@ func HandleStudentInfo(botService *services.BotService, message *tgbotapi.Messag
 		return err
 	}
 
-	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-	if err != nil || admin == nil {
+	admin := botService.GetAdmin(telegramID)
+	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
@@ -216,8 +216,8 @@ func HandleAdminStudentNameInput(botService *services.BotService, message *tgbot
 	}
 
 	// Get admin info
-	admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-	if err != nil || admin == nil {
+	admin := botService.GetAdmin(telegramID)
+	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		_ = botService.StateManager.Clear(telegramID)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -477,7 +477,7 @@ func HandleListStudentsCommand(botService *services.BotService, message *tgbotap
 	}
 
 	// Get all students
-	students, err := botService.StudentRepo.GetAll(100, 0)
+	students, err := botService.StudentRepo.GetAll(adminBranchID(botService, message.From.ID), 100, 0)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)

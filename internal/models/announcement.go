@@ -4,16 +4,17 @@ import "time"
 
 // Announcement represents a school announcement
 type Announcement struct {
-	ID                 int       `json:"id" db:"id"`
-	Title              *string   `json:"title" db:"title"`
-	Content            string    `json:"content" db:"content"`
-	TelegramFileID     *string   `json:"telegram_file_id" db:"telegram_file_id"` // optional image
-	Filename           *string   `json:"filename" db:"filename"`
-	FileType           *string   `json:"file_type" db:"file_type"` // image, document
-	PostedByAdminID    *int      `json:"posted_by_admin_id" db:"posted_by_admin_id"`
-	PostedByTeacherID  *int      `json:"posted_by_teacher_id" db:"posted_by_teacher_id"`
-	CreatedAt          time.Time `json:"created_at" db:"created_at"`
-	IsActive           bool      `json:"is_active" db:"is_active"`
+	ID                int       `json:"id" db:"id"`
+	Title             *string   `json:"title" db:"title"`
+	Content           string    `json:"content" db:"content"`
+	TelegramFileID    *string   `json:"telegram_file_id" db:"telegram_file_id"` // optional image
+	Filename          *string   `json:"filename" db:"filename"`
+	FileType          *string   `json:"file_type" db:"file_type"` // image, document
+	PostedByAdminID   *int      `json:"posted_by_admin_id" db:"posted_by_admin_id"`
+	PostedByTeacherID *int      `json:"posted_by_teacher_id" db:"posted_by_teacher_id"`
+	CreatedAt         time.Time `json:"created_at" db:"created_at"`
+	IsActive          bool      `json:"is_active" db:"is_active"`
+	BranchID          int       `json:"branch_id" db:"branch_id"`
 }
 
 // AnnouncementClass represents the junction table linking announcements to classes
@@ -32,7 +33,8 @@ type CreateAnnouncementRequest struct {
 	FileType          *string `json:"file_type"`
 	PostedByAdminID   *int    `json:"posted_by_admin_id"`
 	PostedByTeacherID *int    `json:"posted_by_teacher_id"`
-	ClassIDs          []int   `json:"class_ids" validate:"required,min=1"` // Target classes
+	ClassIDs          []int   `json:"class_ids"` // Target classes; empty = whole branch
+	BranchID          int     `json:"branch_id" validate:"required"`
 }
 
 // UpdateAnnouncementRequest is the request to update an announcement

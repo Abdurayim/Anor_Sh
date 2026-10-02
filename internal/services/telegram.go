@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -71,21 +72,66 @@ func (s *TelegramService) SendDocumentByFileID(chatID int64, fileID, caption str
 	return nil
 }
 
-// SendMessage sends a text message
+// SendPhotoByFileID sends an already uploaded photo by its file_id
+func (s *TelegramService) SendPhotoByFileID(chatID int64, fileID, caption string) error {
+	photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID))
+	photo.Caption = caption
+	_, err := s.bot.Send(photo)
+	return err
+}
+
+// maxMessageRunes stays below Telegram's 4096-character limit for one message.
+const maxMessageRunes = 4000
+
+// SendMessage sends an HTML text message. Texts longer than Telegram's limit are split on
+// line breaks into several messages; the reply markup is attached to the last one.
 func (s *TelegramService) SendMessage(chatID int64, text string, replyMarkup interface{}) error {
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "HTML"
+	chunks := splitMessage(text, maxMessageRunes)
+	for i, chunk := range chunks {
+		msg := tgbotapi.NewMessage(chatID, chunk)
+		msg.ParseMode = "HTML"
 
-	if replyMarkup != nil {
-		msg.ReplyMarkup = replyMarkup
-	}
+		if replyMarkup != nil && i == len(chunks)-1 {
+			msg.ReplyMarkup = replyMarkup
+		}
 
-	_, err := s.bot.Send(msg)
-	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		if _, err := s.bot.Send(msg); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
 	}
 
 	return nil
+}
+
+// splitMessage splits text into chunks of at most limit runes, preferring line boundaries
+// (HTML tags in this bot never span lines, so they are not cut).
+func splitMessage(text string, limit int) []string {
+	if len([]rune(text)) <= limit {
+		return []string{text}
+	}
+
+	var chunks []string
+	var current []rune
+	for _, line := range strings.SplitAfter(text, "\n") {
+		r := []rune(line)
+		for len(r) > limit { // a single line longer than the limit
+			if len(current) > 0 {
+				chunks = append(chunks, string(current))
+				current = nil
+			}
+			chunks = append(chunks, string(r[:limit]))
+			r = r[limit:]
+		}
+		if len(current)+len(r) > limit {
+			chunks = append(chunks, string(current))
+			current = nil
+		}
+		current = append(current, r...)
+	}
+	if len(current) > 0 {
+		chunks = append(chunks, string(current))
+	}
+	return chunks
 }
 
 // AnswerCallbackQuery answers a callback query

@@ -19,9 +19,9 @@ func HandleTeacherTakeAttendanceCommand(botService *services.BotService, message
 	chatID := message.Chat.ID
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
-		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы danных"
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
@@ -64,8 +64,8 @@ func HandleAttendanceClassSelection(botService *services.BotService, callback *t
 	teacher, err := botService.TeacherService.GetTeacherByTelegramID(telegramID)
 	if err != nil || teacher == nil {
 		// Could also be admin
-		admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-		if err != nil || admin == nil {
+		admin := botService.GetAdmin(telegramID)
+		if admin == nil {
 			text := "❌ Ruxsat yo'q / Нет разрешения"
 			_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 			return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -234,8 +234,8 @@ func HandleAttendanceInfo(botService *services.BotService, message *tgbotapi.Mes
 		teacherID = &teacher.ID
 	} else {
 		// Check if admin
-		admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-		if err != nil || admin == nil {
+		admin := botService.GetAdmin(telegramID)
+		if admin == nil {
 			text := "❌ Ruxsat yo'q / Нет разрешения"
 			return botService.TelegramService.SendMessage(chatID, text, nil)
 		}
@@ -404,7 +404,7 @@ func HandleTeacherViewClassAttendanceCommand(botService *services.BotService, me
 	chatID := message.Chat.ID
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -619,7 +619,7 @@ func HandleAttendanceFinish(botService *services.BotService, callback *tgbotapi.
 
 	// Get teacher or admin
 	teacher, _ := botService.TeacherService.GetTeacherByTelegramID(telegramID)
-	admin, _ := botService.AdminRepo.GetByTelegramID(telegramID)
+	admin := botService.GetAdmin(telegramID)
 
 	var teacherID *int
 	var adminID *int
@@ -746,15 +746,19 @@ func HandleAttendanceFinish(botService *services.BotService, callback *tgbotapi.
 	err = botService.TelegramService.SendMessage(chatID, text, keyboard)
 
 	// Send notification to ALL admins about attendance
-	go notifyAdminsAboutAttendance(botService, className, todayStr, markedByName, presentCount, absentCount, absentStudentNames)
+	go notifyAdminsAboutAttendance(botService, classID, className, todayStr, markedByName, presentCount, absentCount, absentStudentNames)
 
 	return err
 }
 
-// notifyAdminsAboutAttendance sends notification to all admins about completed attendance
-func notifyAdminsAboutAttendance(botService *services.BotService, className, date, markedBy string, presentCount, absentCount int, absentStudentNames []string) {
-	// Get all admins
-	admins, err := botService.AdminRepo.GetAll()
+// notifyAdminsAboutAttendance notifies the admins of the class's branch about completed attendance
+func notifyAdminsAboutAttendance(botService *services.BotService, classID int, className, date, markedBy string, presentCount, absentCount int, absentStudentNames []string) {
+	class, err := botService.ClassRepo.GetByID(classID)
+	if err != nil || class == nil {
+		log.Printf("Failed to get class %d for attendance notification: %v", classID, err)
+		return
+	}
+	admins, err := botService.AdminRepo.GetAll(class.BranchID)
 	if err != nil {
 		log.Printf("Failed to get admins for attendance notification: %v", err)
 		return

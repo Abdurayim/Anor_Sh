@@ -118,19 +118,19 @@ func (r *TimetableRepository) GetByClassID(classID int) (*models.Timetable, erro
 }
 
 // GetByClassName gets the latest timetable for a class by name
-func (r *TimetableRepository) GetByClassName(className string) (*models.Timetable, error) {
+func (r *TimetableRepository) GetByClassName(branchID int, className string) (*models.Timetable, error) {
 	query := `
 		SELECT t.id, t.class_id, t.telegram_file_id, t.filename, t.file_type, t.mime_type,
 		       t.uploaded_by_admin_id, t.created_at, t.updated_at
 		FROM timetables t
 		INNER JOIN classes c ON t.class_id = c.id
-		WHERE c.class_name = ?
+		WHERE c.branch_id = ? AND c.class_name = ?
 		ORDER BY t.created_at DESC
 		LIMIT 1
 	`
 
 	var timetable models.Timetable
-	err := r.db.QueryRow(query, className).Scan(
+	err := r.db.QueryRow(query, branchID, className).Scan(
 		&timetable.ID,
 		&timetable.ClassID,
 		&timetable.TelegramFileID,
@@ -153,16 +153,17 @@ func (r *TimetableRepository) GetByClassName(className string) (*models.Timetabl
 	return &timetable, nil
 }
 
-// GetAll gets all timetables with pagination (for admin)
-func (r *TimetableRepository) GetAll(limit, offset int) ([]*models.Timetable, error) {
+// GetAll gets timetables of a branch with pagination (branchID 0 = all branches)
+func (r *TimetableRepository) GetAll(branchID, limit, offset int) ([]*models.Timetable, error) {
 	query := `
 		SELECT id, class_id, telegram_file_id, filename, file_type, mime_type, uploaded_by_admin_id, created_at, updated_at
 		FROM timetables
+		WHERE (? = 0 OR class_id IN (SELECT id FROM classes WHERE branch_id = ?))
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, limit, offset)
+	rows, err := r.db.Query(query, branchID, branchID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timetables: %w", err)
 	}

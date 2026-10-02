@@ -5,6 +5,7 @@ import "time"
 // Class represents a school class
 type Class struct {
 	ID        int       `json:"id" db:"id"`
+	BranchID  int       `json:"branch_id" db:"branch_id"`
 	ClassName string    `json:"class_name" db:"class_name"`
 	IsActive  bool      `json:"is_active" db:"is_active"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`

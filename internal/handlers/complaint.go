@@ -186,7 +186,8 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	var student *models.StudentWithClass
 	if stateData.SelectedStudentID != nil {
 		student, err = botService.StudentService.GetStudentByIDWithClass(*stateData.SelectedStudentID)
-		if err != nil || student == nil {
+		linked, _ := botService.StudentRepo.IsStudentLinkedToParent(user.ID, *stateData.SelectedStudentID)
+		if err != nil || student == nil || !linked {
 			log.Printf("Failed to get student: %v", err)
 			text := "⚠️ Iltimos, avval farzandingizni tanlang / Пожалуйста, сначала выберите ребенка"
 			return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -220,6 +221,7 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 	// Save complaint to database with document info
 	complaintReq := &models.CreateComplaintRequest{
 		UserID:         user.ID,
+		StudentID:      &student.ID,
 		ComplaintText:  stateData.ComplaintText,
 		TelegramFileID: fileID,
 		Filename:       filename,
@@ -237,7 +239,7 @@ func HandleComplaintConfirmation(botService *services.BotService, callback *tgbo
 
 	// Send success message
 	text := i18n.Get(i18n.MsgComplaintSubmitted, lang)
-	keyboard := utils.MakeMainMenuKeyboard(lang)
+	keyboard := utils.MakeMainMenuKeyboardForUser(lang, botService.GetAdmin(telegramID) != nil)
 	_ = botService.TelegramService.SendMessage(chatID, text, keyboard)
 
 	// Notify admins with DOCX document
@@ -271,7 +273,7 @@ func HandleComplaintCancellation(botService *services.BotService, callback *tgbo
 
 	// Send cancellation message
 	text := i18n.Get(i18n.MsgComplaintCancelled, lang)
-	keyboard := utils.MakeMainMenuKeyboard(lang)
+	keyboard := utils.MakeMainMenuKeyboardForUser(lang, botService.GetAdmin(telegramID) != nil)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
@@ -279,7 +281,7 @@ func HandleComplaintCancellation(botService *services.BotService, callback *tgbo
 // notifyAdminsWithDocument sends complaint as DOCX document to all admins
 func notifyAdminsWithDocument(botService *services.BotService, user *models.User, student *models.StudentWithClass, complaint *models.Complaint, fileID string) {
 	// Get admin telegram IDs
-	adminIDs, err := botService.GetAdminTelegramIDs()
+	adminIDs, err := botService.GetAdminTelegramIDs(user.BranchID)
 	if err != nil {
 		log.Printf("Failed to get admin IDs: %v", err)
 		return

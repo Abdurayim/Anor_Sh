@@ -46,7 +46,7 @@ func HandleMyChildrenCommand(botService *services.BotService, message *tgbotapi.
 		text := i18n.Get(i18n.MsgNoChildrenLinked, lang)
 
 		// Get active classes
-		classes, err := botService.ClassRepo.GetActive()
+		classes, err := botService.ClassRepo.GetActive(user.BranchID)
 		if err != nil || len(classes) == 0 {
 			text += "\n\n" + i18n.Get(i18n.MsgWaitForStudentAdd, lang)
 			return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -177,7 +177,7 @@ func HandleSelectClassCallback(botService *services.BotService, callback *tgbota
 	chatID := callback.Message.Chat.ID
 
 	// Extract class name from callback data (format: "select_class_9A")
-	className := strings.TrimPrefix(callback.Data, "select_class_")
+	classID, _ := strconv.Atoi(strings.TrimPrefix(callback.Data, "select_class_"))
 
 	// Get user and state data
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
@@ -188,12 +188,13 @@ func HandleSelectClassCallback(botService *services.BotService, callback *tgbota
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get class by name
-	class, err := botService.ClassRepo.GetByName(className)
-	if err != nil || class == nil {
+	// Class must be in the parent's branch (also checked by authorizeCallback)
+	class, err := botService.ClassRepo.GetByID(classID)
+	if err != nil || class == nil || class.BranchID != user.BranchID {
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Sinf topilmadi / Класс не найден")
 		return nil
 	}
+	className := class.ClassName
 
 	// Get state data
 	stateData, err := botService.StateManager.GetData(telegramID)
@@ -354,7 +355,7 @@ func HandleBackToClassSelectionCallback(botService *services.BotService, callbac
 	lang := i18n.GetLanguage(user.Language)
 
 	// Get active classes
-	classes, err := botService.ClassRepo.GetActive()
+	classes, err := botService.ClassRepo.GetActive(user.BranchID)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -410,7 +411,7 @@ func makeClassSelectionKeyboardWithBack(classes []*models.Class, lang i18n.Langu
 	for i, class := range classes {
 		button := tgbotapi.NewInlineKeyboardButtonData(
 			class.ClassName,
-			"select_class_"+class.ClassName,
+			fmt.Sprintf("select_class_%d", class.ID),
 		)
 		row = append(row, button)
 
@@ -440,7 +441,7 @@ func makeClassSelectionKeyboardForMyKids(classes []*models.Class, lang i18n.Lang
 	for i, class := range classes {
 		button := tgbotapi.NewInlineKeyboardButtonData(
 			class.ClassName,
-			"mykids_class_"+class.ClassName,
+			fmt.Sprintf("mykids_class_%d", class.ID),
 		)
 		row = append(row, button)
 
@@ -488,7 +489,7 @@ func HandleAddAnotherChildCallback(botService *services.BotService, callback *tg
 	}
 
 	// Get active classes
-	classes, err := botService.ClassRepo.GetActive()
+	classes, err := botService.ClassRepo.GetActive(user.BranchID)
 	if err != nil || len(classes) == 0 {
 		text := i18n.Get(i18n.MsgWaitForStudentAdd, lang)
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
@@ -516,7 +517,7 @@ func HandleMyKidsClassCallback(botService *services.BotService, callback *tgbota
 	chatID := callback.Message.Chat.ID
 
 	// Extract class name from callback data (format: "mykids_class_9A")
-	className := strings.TrimPrefix(callback.Data, "mykids_class_")
+	classID, _ := strconv.Atoi(strings.TrimPrefix(callback.Data, "mykids_class_"))
 
 	// Get user
 	user, err := botService.UserService.GetUserByTelegramID(telegramID)
@@ -527,12 +528,13 @@ func HandleMyKidsClassCallback(botService *services.BotService, callback *tgbota
 
 	lang := i18n.GetLanguage(user.Language)
 
-	// Get class by name
-	class, err := botService.ClassRepo.GetByName(className)
-	if err != nil || class == nil {
+	// Class must be in the parent's branch (also checked by authorizeCallback)
+	class, err := botService.ClassRepo.GetByID(classID)
+	if err != nil || class == nil || class.BranchID != user.BranchID {
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "❌ Sinf topilmadi / Класс не найден")
 		return nil
 	}
+	className := class.ClassName
 
 	// Get state data
 	stateData, err := botService.StateManager.GetData(telegramID)
@@ -762,7 +764,7 @@ func HandleBackToMyKidsCallback(botService *services.BotService, callback *tgbot
 		text := i18n.Get(i18n.MsgNoChildrenLinked, lang)
 
 		// Get active classes
-		classes, err := botService.ClassRepo.GetActive()
+		classes, err := botService.ClassRepo.GetActive(user.BranchID)
 		if err != nil || len(classes) == 0 {
 			text += "\n\n" + i18n.Get(i18n.MsgWaitForStudentAdd, lang)
 			return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -838,7 +840,7 @@ func HandleBackToMyKidsClassSelectionCallback(botService *services.BotService, c
 	lang := i18n.GetLanguage(user.Language)
 
 	// Get active classes
-	classes, err := botService.ClassRepo.GetActive()
+	classes, err := botService.ClassRepo.GetActive(user.BranchID)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)

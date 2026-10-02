@@ -228,7 +228,7 @@ func MakeClassSelectionKeyboardWithBack(classes []*models.Class, lang i18n.Langu
 	for i, class := range classes {
 		button := tgbotapi.NewInlineKeyboardButtonData(
 			class.ClassName,
-			"select_class_"+class.ClassName,
+			fmt.Sprintf("select_class_%d", class.ID),
 		)
 		row = append(row, button)
 

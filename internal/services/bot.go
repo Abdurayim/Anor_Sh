@@ -6,6 +6,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"parent-bot/internal/config"
+	"parent-bot/internal/models"
 	"parent-bot/internal/repository"
 	"parent-bot/internal/state"
 )
@@ -20,6 +21,7 @@ type BotService struct {
 	TimetableRepo       *repository.TimetableRepository
 	AnnouncementRepo    *repository.AnnouncementRepository
 	AdminRepo           *repository.AdminRepository
+	BranchRepo          *repository.BranchRepository
 	ClassRepo           *repository.ClassRepository
 	TeacherRepo         *repository.TeacherRepository
 	StudentRepo         *repository.StudentRepository
@@ -47,6 +49,12 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
+	return NewBotServiceWithBot(cfg, db, bot), nil
+}
+
+// NewBotServiceWithBot wires repositories and services around an existing Telegram client
+// (bot may be nil in tests that never talk to Telegram).
+func NewBotServiceWithBot(cfg *config.Config, db *sql.DB, bot *tgbotapi.BotAPI) *BotService {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	complaintRepo := repository.NewComplaintRepository(db)
@@ -54,6 +62,7 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 	timetableRepo := repository.NewTimetableRepository(db)
 	announcementRepo := repository.NewAnnouncementRepository(db)
 	adminRepo := repository.NewAdminRepository(db)
+	branchRepo := repository.NewBranchRepository(db)
 	classRepo := repository.NewClassRepository(db)
 	teacherRepo := repository.NewTeacherRepository(db)
 	studentRepo := repository.NewStudentRepository(db)
@@ -85,6 +94,7 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 		TimetableRepo:       timetableRepo,
 		AnnouncementRepo:    announcementRepo,
 		AdminRepo:           adminRepo,
+		BranchRepo:          branchRepo,
 		ClassRepo:           classRepo,
 		TeacherRepo:         teacherRepo,
 		StudentRepo:         studentRepo,
@@ -102,25 +112,25 @@ func NewBotService(cfg *config.Config, db *sql.DB) (*BotService, error) {
 		StudentService:      studentService,
 		TestResultService:   testResultService,
 		AttendanceService:   attendanceService,
-	}, nil
+	}
 }
 
-// SetWebhook sets up webhook
-func (s *BotService) SetWebhook(webhookURL string) error {
-	wh, err := tgbotapi.NewWebhook(webhookURL)
-	if err != nil {
-		return fmt.Errorf("failed to create webhook: %w", err)
+// SetWebhook registers the webhook URL; Telegram will send secret in
+// X-Telegram-Bot-Api-Secret-Token on every request when it is not empty.
+func (s *BotService) SetWebhook(webhookURL, secret string) error {
+	// telegram-bot-api v5.5.1 does not know secret_token, so the request is built by hand.
+	params := tgbotapi.Params{"url": webhookURL}
+	if secret != "" {
+		params["secret_token"] = secret
 	}
-
-	_, err = s.Bot.Request(wh)
-	if err != nil {
+	if _, err := s.Bot.MakeRequest("setWebhook", params); err != nil {
 		return fmt.Errorf("failed to set webhook: %w", err)
 	}
 
 	return nil
 }
 
-// RemoveWebhook removes webhook
+// RemoveWebhook removes webhook (for polling mode)
 func (s *BotService) RemoveWebhook() error {
 	_, err := s.Bot.Request(tgbotapi.DeleteWebhookConfig{})
 	if err != nil {
@@ -130,30 +140,91 @@ func (s *BotService) RemoveWebhook() error {
 	return nil
 }
 
-// InitializeAdmins initializes admins from config
+// InitializeAdmins syncs the admins table with .env: every configured phone becomes an
+// active admin (the super admin or a branch admin), .env admins no longer configured are
+// deactivated. Branch admins added by the super admin in the bot are kept.
 func (s *BotService) InitializeAdmins() error {
-	for _, phone := range s.Config.Admin.PhoneNumbers {
-		// Check if admin already exists
-		admin, err := s.AdminRepo.GetByPhoneNumber(phone)
-		if err != nil {
-			return fmt.Errorf("failed to check admin: %w", err)
-		}
+	configured := s.Config.Admin.AllPhones()
 
-		if admin == nil {
-			// Create admin
-			_, err = s.AdminRepo.Create(phone, "Admin")
-			if err != nil {
-				fmt.Printf("Warning: failed to create admin %s: %v\n", phone, err)
+	if phone := s.Config.Admin.SuperAdminPhone; phone != "" {
+		if err := s.AdminRepo.UpsertFromEnv(phone, "Super admin", models.RoleSuperAdmin, 0); err != nil {
+			return err
+		}
+		configured = append(configured, phone)
+	}
+
+	for _, code := range config.BranchCodes {
+		phones := s.Config.Admin.BranchPhones[code]
+		if len(phones) == 0 {
+			continue
+		}
+		branch, err := s.BranchRepo.GetByCode(code)
+		if err != nil {
+			return err
+		}
+		if branch == nil {
+			return fmt.Errorf("branch %q not found in database", code)
+		}
+		for _, phone := range phones {
+			if err := s.AdminRepo.UpsertFromEnv(phone, "Admin "+branch.NameUz, models.RoleAdmin, branch.ID); err != nil {
+				return err
 			}
 		}
 	}
 
+	return s.AdminRepo.DeactivateEnvAdminsExcept(configured)
+}
+
+// MaxAdminsPerBranch limits how many admins a branch can have.
+const MaxAdminsPerBranch = 3
+
+// AddBranchAdmin lets the super admin add an admin to a branch. The new admin links their
+// Telegram account by sharing their contact in the bot.
+func (s *BotService) AddBranchAdmin(superAdmin *models.Admin, phone, name string, branchID int) error {
+	if superAdmin == nil || !superAdmin.IsSuperAdmin() {
+		return fmt.Errorf("only the super admin can add admins")
+	}
+	branch, err := s.BranchRepo.GetByID(branchID)
+	if err != nil || branch == nil {
+		return fmt.Errorf("filial topilmadi / филиал не найден")
+	}
+	if existing, _ := s.AdminRepo.GetByPhoneNumber(phone); existing != nil {
+		return fmt.Errorf("bu raqam allaqachon admin / этот номер уже администратор")
+	}
+	if teacher, _ := s.TeacherRepo.GetByPhoneNumber(phone); teacher != nil && teacher.IsActive {
+		return fmt.Errorf("bu raqam o'qituvchiga tegishli / этот номер принадлежит учителю")
+	}
+	if n, err := s.AdminRepo.Count(branchID); err == nil && n >= MaxAdminsPerBranch {
+		return fmt.Errorf("filialda %d tadan ortiq admin bo'lmaydi / в филиале не больше %d админов", MaxAdminsPerBranch, MaxAdminsPerBranch)
+	}
+	if err := s.AdminRepo.CreateBranchAdmin(phone, name, branchID, superAdmin.ID); err != nil {
+		if err == repository.ErrAdminExists {
+			return fmt.Errorf("bu raqam allaqachon admin / этот номер уже администратор")
+		}
+		return err
+	}
 	return nil
 }
 
-// GetAdminTelegramIDs gets all admin telegram IDs
-func (s *BotService) GetAdminTelegramIDs() ([]int64, error) {
-	admins, err := s.AdminRepo.GetAll()
+// RemoveBranchAdmin lets the super admin remove a branch admin. Admins configured in .env
+// cannot be removed here (they would come back on the next start).
+func (s *BotService) RemoveBranchAdmin(superAdmin *models.Admin, adminID int) error {
+	if superAdmin == nil || !superAdmin.IsSuperAdmin() {
+		return fmt.Errorf("only the super admin can remove admins")
+	}
+	admin, err := s.AdminRepo.GetByID(adminID)
+	if err != nil || admin == nil || admin.IsSuperAdmin() {
+		return fmt.Errorf("admin topilmadi / админ не найден")
+	}
+	if admin.Source == models.AdminSourceEnv {
+		return fmt.Errorf(".env dagi adminni faqat .env dan o'chirish mumkin / админ из .env удаляется только в .env")
+	}
+	return s.AdminRepo.Deactivate(adminID)
+}
+
+// GetAdminTelegramIDs returns Telegram IDs of linked admins of a branch (branchID 0 = all branches)
+func (s *BotService) GetAdminTelegramIDs(branchID int) ([]int64, error) {
+	admins, err := s.AdminRepo.GetAll(branchID)
 	if err != nil {
 		return nil, err
 	}
@@ -168,46 +239,76 @@ func (s *BotService) GetAdminTelegramIDs() ([]int64, error) {
 	return ids, nil
 }
 
-// IsAdmin checks if user is admin by checking:
-// 1. Database admins table (by phone or telegram_id)
-// 2. Config admin phones (if user is registered)
-// 3. Attempts to link telegram_id if admin phone matches
-func (s *BotService) IsAdmin(phoneNumber string, telegramID int64) (bool, error) {
-	// First check database
-	isAdminInDB, err := s.AdminRepo.IsAdmin(phoneNumber, telegramID)
+// GetAdmin returns the active *branch* admin linked to this Telegram account, or nil.
+// An account is linked only after the admin shared their own contact (see LinkAdminByContact),
+// so typing someone else's phone number never grants admin rights.
+func (s *BotService) GetAdmin(telegramID int64) *models.Admin {
+	admin := s.getLinkedAdmin(telegramID)
+	if admin == nil || admin.IsSuperAdmin() {
+		return nil
+	}
+	return admin
+}
+
+// GetSuperAdmin returns the super admin linked to this Telegram account, or nil.
+func (s *BotService) GetSuperAdmin(telegramID int64) *models.Admin {
+	admin := s.getLinkedAdmin(telegramID)
+	if admin == nil || !admin.IsSuperAdmin() {
+		return nil
+	}
+	return admin
+}
+
+func (s *BotService) getLinkedAdmin(telegramID int64) *models.Admin {
+	if telegramID == 0 {
+		return nil
+	}
+	admin, err := s.AdminRepo.GetByTelegramID(telegramID)
 	if err != nil {
-		return false, err
+		return nil
 	}
+	return admin
+}
 
-	if isAdminInDB {
-		return true, nil
+// IsAdmin reports whether the Telegram account is a linked, active branch admin.
+// The phone number argument is ignored: phone numbers are not proof of identity.
+func (s *BotService) IsAdmin(_ string, telegramID int64) (bool, error) {
+	return s.GetAdmin(telegramID) != nil, nil
+}
+
+// LinkAdminByContact links the Telegram account to an admin (branch or super) if the
+// verified phone belongs to an active admin. It returns the admin or nil.
+func (s *BotService) LinkAdminByContact(verifiedPhone string, telegramID int64) (*models.Admin, error) {
+	admin, err := s.AdminRepo.GetByPhoneNumber(verifiedPhone)
+	if err != nil || admin == nil {
+		return nil, err
 	}
-
-	// If not found in DB, check if user's phone matches config admin phones
-	if phoneNumber != "" {
-		for _, adminPhone := range s.Config.Admin.PhoneNumbers {
-			if phoneNumber == adminPhone {
-				// Found admin by phone from config, link telegram_id
-				_ = s.AdminRepo.UpdateTelegramID(phoneNumber, telegramID)
-				return true, nil
-			}
-		}
+	if err := s.AdminRepo.UpdateTelegramID(verifiedPhone, telegramID); err != nil {
+		return nil, err
 	}
+	return s.AdminRepo.GetByTelegramID(telegramID)
+}
 
-	// If phone is empty, try to get it from user record
-	if phoneNumber == "" && telegramID != 0 {
-		user, err := s.UserService.GetUserByTelegramID(telegramID)
-		if err == nil && user != nil {
-			// Check if user's phone is an admin phone
-			for _, adminPhone := range s.Config.Admin.PhoneNumbers {
-				if user.PhoneNumber == adminPhone {
-					// Found admin by phone from config, link telegram_id
-					_ = s.AdminRepo.UpdateTelegramID(user.PhoneNumber, telegramID)
-					return true, nil
-				}
-			}
-		}
+// BranchName returns the localized branch name, or "" if unknown.
+func (s *BotService) BranchName(branchID int, lang string) string {
+	branch, err := s.BranchRepo.GetByID(branchID)
+	if err != nil || branch == nil {
+		return ""
 	}
+	return branch.Name(lang)
+}
 
-	return false, nil
+// ClassInBranch reports whether a class belongs to the branch.
+func (s *BotService) ClassInBranch(classID, branchID int) bool {
+	ok, err := s.ClassRepo.BelongsToBranch(classID, branchID)
+	return err == nil && ok
+}
+
+// StudentInBranch reports whether a student's class belongs to the branch.
+func (s *BotService) StudentInBranch(studentID, branchID int) bool {
+	student, err := s.StudentRepo.GetByID(studentID)
+	if err != nil || student == nil {
+		return false
+	}
+	return s.ClassInBranch(student.ClassID, branchID)
 }

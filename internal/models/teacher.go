@@ -4,25 +4,27 @@ import "time"
 
 // Teacher represents a teacher account
 type Teacher struct {
-	ID            int        `json:"id" db:"id"`
-	PhoneNumber   string     `json:"phone_number" db:"phone_number"`
-	TelegramID    *int64     `json:"telegram_id" db:"telegram_id"`
-	FirstName     string     `json:"first_name" db:"first_name"`
-	LastName      string     `json:"last_name" db:"last_name"`
-	Language      string     `json:"language" db:"language"`
-	IsActive      bool       `json:"is_active" db:"is_active"`
-	AddedByAdminID *int      `json:"added_by_admin_id" db:"added_by_admin_id"`
-	RegisteredAt  *time.Time `json:"registered_at" db:"registered_at"`
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	ID             int        `json:"id" db:"id"`
+	PhoneNumber    string     `json:"phone_number" db:"phone_number"`
+	TelegramID     *int64     `json:"telegram_id" db:"telegram_id"`
+	FirstName      string     `json:"first_name" db:"first_name"`
+	LastName       string     `json:"last_name" db:"last_name"`
+	Language       string     `json:"language" db:"language"`
+	IsActive       bool       `json:"is_active" db:"is_active"`
+	BranchID       int        `json:"branch_id" db:"branch_id"`
+	AddedByAdminID *int       `json:"added_by_admin_id" db:"added_by_admin_id"`
+	RegisteredAt   *time.Time `json:"registered_at" db:"registered_at"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 }
 
 // CreateTeacherRequest is the request to create a new teacher
 type CreateTeacherRequest struct {
-	PhoneNumber string `json:"phone_number" validate:"required"`
-	FirstName   string `json:"first_name" validate:"required,min=2,max=100"`
-	LastName    string `json:"last_name" validate:"required,min=2,max=100"`
-	Language    string `json:"language" validate:"required,oneof=uz ru"`
-	AddedByAdminID int `json:"added_by_admin_id" validate:"required"`
+	PhoneNumber    string `json:"phone_number" validate:"required"`
+	FirstName      string `json:"first_name" validate:"required,min=2,max=100"`
+	LastName       string `json:"last_name" validate:"required,min=2,max=100"`
+	Language       string `json:"language" validate:"required,oneof=uz ru"`
+	AddedByAdminID int    `json:"added_by_admin_id" validate:"required"`
+	BranchID       int    `json:"branch_id" validate:"required"`
 }
 
 // UpdateTeacherRequest is the request to update teacher data

@@ -15,120 +15,59 @@ type ProposalService struct {
 
 // NewProposalService creates a new proposal service
 func NewProposalService(repo *repository.ProposalRepository, userRepo *repository.UserRepository) *ProposalService {
-	return &ProposalService{
-		repo:     repo,
-		userRepo: userRepo,
-	}
+	return &ProposalService{repo: repo, userRepo: userRepo}
 }
 
 // CreateProposal creates a new proposal
 func (s *ProposalService) CreateProposal(req *models.CreateProposalRequest) (*models.Proposal, error) {
-	// Create proposal directly - user validation already done in handler
-	proposal, err := s.repo.Create(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create proposal: %w", err)
-	}
+	return s.repo.Create(req)
+}
 
-	return proposal, nil
+// SetProposalFile stores the Telegram file of the generated document
+func (s *ProposalService) SetProposalFile(id int, telegramFileID, filename string) error {
+	return s.repo.SetFile(id, telegramFileID, filename)
 }
 
 // GetProposalByID gets proposal by ID
 func (s *ProposalService) GetProposalByID(id int) (*models.Proposal, error) {
-	proposal, err := s.repo.GetByID(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proposal: %w", err)
-	}
-
-	return proposal, nil
+	return s.repo.GetByID(id)
 }
 
-// GetUserProposals gets proposals by user ID
+// GetUserProposals gets proposals of a parent
 func (s *ProposalService) GetUserProposals(userID int, limit, offset int) ([]*models.Proposal, error) {
-	proposals, err := s.repo.GetByUserID(userID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user proposals: %w", err)
-	}
-
-	return proposals, nil
+	return s.repo.GetByUserID(userID, limit, offset)
 }
 
-// GetAllProposals gets all proposals with pagination
-func (s *ProposalService) GetAllProposals(limit, offset int) ([]*models.Proposal, error) {
-	proposals, err := s.repo.GetAll(limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proposals: %w", err)
-	}
-
-	return proposals, nil
+// GetAllProposals gets proposals of a branch (branchID 0 = all branches)
+func (s *ProposalService) GetAllProposals(branchID, limit, offset int) ([]*models.Proposal, error) {
+	return s.repo.GetAll(branchID, limit, offset)
 }
 
-// GetAllProposalsWithUser gets all proposals with user info
-func (s *ProposalService) GetAllProposalsWithUser(limit, offset int) ([]*models.ProposalWithUser, error) {
-	proposals, err := s.repo.GetAllWithUser(limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proposals with user: %w", err)
-	}
-
-	return proposals, nil
-}
-
-// GetProposalsByStatus gets proposals by status
-func (s *ProposalService) GetProposalsByStatus(status string, limit, offset int) ([]*models.Proposal, error) {
-	proposals, err := s.repo.GetByStatus(status, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proposals by status: %w", err)
-	}
-
-	return proposals, nil
+// GetAllProposalsWithUser gets proposals of a branch with parent info (branchID 0 = all branches)
+func (s *ProposalService) GetAllProposalsWithUser(branchID, limit, offset int) ([]*models.ProposalWithUser, error) {
+	return s.repo.GetAllWithUser(branchID, limit, offset)
 }
 
 // UpdateProposalStatus updates proposal status
 func (s *ProposalService) UpdateProposalStatus(id int, status string) error {
-	// Validate status (using same statuses as complaints)
-	validStatuses := map[string]bool{
-		models.StatusPending:  true,
-		models.StatusReviewed: true,
-		models.StatusArchived: true,
-	}
-
-	if !validStatuses[status] {
+	valid := map[string]bool{models.StatusPending: true, models.StatusReviewed: true, models.StatusImplemented: true}
+	if !valid[status] {
 		return fmt.Errorf("invalid status: %s", status)
 	}
-
-	err := s.repo.UpdateStatus(id, status)
-	if err != nil {
-		return fmt.Errorf("failed to update proposal status: %w", err)
-	}
-
-	return nil
+	return s.repo.UpdateStatus(id, status)
 }
 
-// CountProposals counts total proposals
-func (s *ProposalService) CountProposals() (int, error) {
-	count, err := s.repo.Count()
-	if err != nil {
-		return 0, fmt.Errorf("failed to count proposals: %w", err)
-	}
-
-	return count, nil
+// CountProposals counts proposals of a branch (branchID 0 = all branches)
+func (s *ProposalService) CountProposals(branchID int) (int, error) {
+	return s.repo.Count(branchID, "")
 }
 
-// CountProposalsByStatus counts proposals by status
-func (s *ProposalService) CountProposalsByStatus(status string) (int, error) {
-	count, err := s.repo.CountByStatus(status)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count proposals by status: %w", err)
-	}
-
-	return count, nil
+// CountProposalsByStatus counts proposals of a branch with the given status
+func (s *ProposalService) CountProposalsByStatus(branchID int, status string) (int, error) {
+	return s.repo.Count(branchID, status)
 }
 
-// CountUserProposals counts proposals by user ID
+// CountUserProposals counts proposals of a parent
 func (s *ProposalService) CountUserProposals(userID int) (int, error) {
-	count, err := s.repo.CountByUserID(userID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count user proposals: %w", err)
-	}
-
-	return count, nil
+	return s.repo.CountByUserID(userID)
 }

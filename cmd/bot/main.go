@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gin-gonic/gin"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"parent-bot/internal/config"
 	"parent-bot/internal/database"
@@ -37,34 +38,10 @@ func main() {
 	}
 	log.Println("✓ Temporary documents directory created")
 
-	// Run migrations (SQLite version)
-	// Only run migrations if database is new (check if admins table exists)
-	var tableExists bool
-	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='admins')").Scan(&tableExists)
-	if err != nil {
-		log.Fatalf("Failed to check if tables exist: %v", err)
+	if err := database.Migrate(); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
-
-	if !tableExists {
-		log.Println("⚠️  Database tables not found. Running initial migration...")
-		migrationFiles := []string{
-			"internal/database/migrations/006_complete_schema.sql",
-		}
-
-		for _, migrationPath := range migrationFiles {
-			if _, err := os.Stat(migrationPath); err == nil {
-				err = database.RunMigrations(migrationPath)
-				if err != nil {
-					log.Fatalf("Migration %s failed: %v", migrationPath, err)
-				} else {
-					log.Printf("✓ Migration %s completed", migrationPath)
-				}
-			}
-		}
-		log.Println("✓ All database migrations completed")
-	} else {
-		log.Println("✓ Database tables already exist, skipping migrations")
-	}
+	log.Println("✓ Database schema is up to date")
 
 	// Initialize bot service
 	botService, err := services.NewBotService(cfg, database.DB)
@@ -116,6 +93,11 @@ func startWebhookMode(cfg *config.Config, botService *services.BotService) {
 
 	// Webhook endpoint
 	router.POST("/webhook", func(c *gin.Context) {
+		if cfg.Bot.WebhookSecret != "" && c.GetHeader("X-Telegram-Bot-Api-Secret-Token") != cfg.Bot.WebhookSecret {
+			c.JSON(403, gin.H{"error": "forbidden"})
+			return
+		}
+
 		var update tgbotapi.Update
 
 		if err := c.BindJSON(&update); err != nil {
@@ -125,18 +107,26 @@ func startWebhookMode(cfg *config.Config, botService *services.BotService) {
 		}
 
 		// Handle update in goroutine to not block webhook response
-		go handlers.HandleUpdate(botService, update)
+		go handlers.SafeHandleUpdate(botService, update)
 
 		c.JSON(200, gin.H{"ok": true})
 	})
 
 	// Admin API endpoints
-	api := router.Group("/api")
+	api := router.Group("/api", func(c *gin.Context) {
+		// Admin API is disabled unless API_TOKEN is set; the token must be sent as a Bearer header.
+		if cfg.Server.APIToken == "" || c.GetHeader("Authorization") != "Bearer "+cfg.Server.APIToken {
+			c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Next()
+	})
 	{
 		admin := api.Group("/admin")
 		{
+			// Optional ?branch=olmazor|sergeli|<id>; without it data of all branches is returned.
 			admin.GET("/users", func(c *gin.Context) {
-				users, err := botService.UserService.GetAllUsers(100, 0)
+				users, err := botService.UserService.GetAllUsers(apiBranchID(c, botService), 100, 0)
 				if err != nil {
 					c.JSON(500, gin.H{"error": err.Error()})
 					return
@@ -145,7 +135,7 @@ func startWebhookMode(cfg *config.Config, botService *services.BotService) {
 			})
 
 			admin.GET("/complaints", func(c *gin.Context) {
-				complaints, err := botService.ComplaintService.GetAllComplaintsWithUser(100, 0)
+				complaints, err := botService.ComplaintService.GetAllComplaintsWithUser(apiBranchID(c, botService), 100, 0)
 				if err != nil {
 					c.JSON(500, gin.H{"error": err.Error()})
 					return
@@ -154,9 +144,10 @@ func startWebhookMode(cfg *config.Config, botService *services.BotService) {
 			})
 
 			admin.GET("/stats", func(c *gin.Context) {
-				userCount, _ := botService.UserService.CountUsers()
-				complaintCount, _ := botService.ComplaintService.CountComplaints()
-				pendingCount, _ := botService.ComplaintService.CountComplaintsByStatus("pending")
+				branchID := apiBranchID(c, botService)
+				userCount, _ := botService.UserService.CountUsers(branchID)
+				complaintCount, _ := botService.ComplaintService.CountComplaints(branchID)
+				pendingCount, _ := botService.ComplaintService.CountComplaintsByStatus(branchID, "pending")
 
 				c.JSON(200, gin.H{
 					"total_users":        userCount,
@@ -169,7 +160,7 @@ func startWebhookMode(cfg *config.Config, botService *services.BotService) {
 
 	// Setup webhook
 	webhookURL := cfg.Bot.WebhookURL + "/webhook"
-	err := botService.SetWebhook(webhookURL)
+	err := botService.SetWebhook(webhookURL, cfg.Bot.WebhookSecret)
 	if err != nil {
 		log.Printf("Warning: Failed to set webhook: %v", err)
 	} else {
@@ -209,6 +200,21 @@ func startPollingMode(botService *services.BotService) {
 	// Process updates
 	for update := range updates {
 		// Handle each update
-		handlers.HandleUpdate(botService, update)
+		handlers.SafeHandleUpdate(botService, update)
 	}
+}
+
+// apiBranchID resolves the ?branch= query parameter (code or ID) to a branch ID; 0 = all branches.
+func apiBranchID(c *gin.Context, botService *services.BotService) int {
+	value := c.Query("branch")
+	if value == "" {
+		return 0
+	}
+	if id, err := strconv.Atoi(value); err == nil {
+		return id
+	}
+	if branch, err := botService.BranchRepo.GetByCode(value); err == nil && branch != nil {
+		return branch.ID
+	}
+	return -1
 }

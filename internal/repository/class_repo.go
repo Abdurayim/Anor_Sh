@@ -7,6 +7,8 @@ import (
 	"parent-bot/internal/models"
 )
 
+// ClassRepository manages classes. Class names are unique within a branch, so every
+// name-based lookup takes the branch ID.
 type ClassRepository struct {
 	db *sql.DB
 }
@@ -15,14 +17,48 @@ func NewClassRepository(db *sql.DB) *ClassRepository {
 	return &ClassRepository{db: db}
 }
 
-// Create creates a new class
-func (r *ClassRepository) Create(className string) (*models.Class, error) {
-	query := `
-		INSERT INTO classes (class_name, is_active)
-		VALUES (?, 1)
-	`
+const classColumns = "id, branch_id, class_name, is_active, created_at"
 
-	result, err := r.db.Exec(query, className)
+func scanClass(row interface{ Scan(...any) error }) (*models.Class, error) {
+	var class models.Class
+	if err := row.Scan(&class.ID, &class.BranchID, &class.ClassName, &class.IsActive, &class.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &class, nil
+}
+
+func (r *ClassRepository) getOne(query string, args ...any) (*models.Class, error) {
+	class, err := scanClass(r.db.QueryRow(query, args...))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get class: %w", err)
+	}
+	return class, nil
+}
+
+func (r *ClassRepository) getMany(query string, args ...any) ([]*models.Class, error) {
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get classes: %w", err)
+	}
+	defer rows.Close()
+
+	var classes []*models.Class
+	for rows.Next() {
+		class, err := scanClass(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan class: %w", err)
+		}
+		classes = append(classes, class)
+	}
+	return classes, rows.Err()
+}
+
+// Create creates a new class in a branch
+func (r *ClassRepository) Create(branchID int, className string) (*models.Class, error) {
+	result, err := r.db.Exec("INSERT INTO classes (branch_id, class_name, is_active) VALUES (?, ?, 1)", branchID, className)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create class: %w", err)
 	}
@@ -32,210 +68,100 @@ func (r *ClassRepository) Create(className string) (*models.Class, error) {
 		return nil, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 
-	// Get the created class
 	return r.GetByID(int(id))
 }
 
-// GetAll gets all classes
-func (r *ClassRepository) GetAll() ([]*models.Class, error) {
-	query := `
-		SELECT id, class_name, is_active, created_at
-		FROM classes
-		ORDER BY class_name ASC
-	`
-
-	rows, err := r.db.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get classes: %w", err)
-	}
-	defer rows.Close()
-
-	var classes []*models.Class
-	for rows.Next() {
-		var class models.Class
-		err := rows.Scan(
-			&class.ID,
-			&class.ClassName,
-			&class.IsActive,
-			&class.CreatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan class: %w", err)
-		}
-		classes = append(classes, &class)
-	}
-
-	return classes, nil
+// GetAll gets all classes of a branch (branchID 0 = all branches)
+func (r *ClassRepository) GetAll(branchID int) ([]*models.Class, error) {
+	return r.getMany(`
+		SELECT `+classColumns+` FROM classes
+		WHERE (? = 0 OR branch_id = ?)
+		ORDER BY branch_id, class_name ASC
+	`, branchID, branchID)
 }
 
-// GetActive gets all active classes
-func (r *ClassRepository) GetActive() ([]*models.Class, error) {
-	query := `
-		SELECT id, class_name, is_active, created_at
-		FROM classes
-		WHERE is_active = 1
-		ORDER BY class_name ASC
-	`
-
-	rows, err := r.db.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get active classes: %w", err)
-	}
-	defer rows.Close()
-
-	var classes []*models.Class
-	for rows.Next() {
-		var class models.Class
-		err := rows.Scan(
-			&class.ID,
-			&class.ClassName,
-			&class.IsActive,
-			&class.CreatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan class: %w", err)
-		}
-		classes = append(classes, &class)
-	}
-
-	return classes, nil
+// GetActive gets active classes of a branch (branchID 0 = all branches)
+func (r *ClassRepository) GetActive(branchID int) ([]*models.Class, error) {
+	return r.getMany(`
+		SELECT `+classColumns+` FROM classes
+		WHERE is_active = 1 AND (? = 0 OR branch_id = ?)
+		ORDER BY branch_id, class_name ASC
+	`, branchID, branchID)
 }
 
 // GetByID gets class by ID
 func (r *ClassRepository) GetByID(id int) (*models.Class, error) {
-	query := `
-		SELECT id, class_name, is_active, created_at
-		FROM classes
-		WHERE id = ?
-	`
-
-	var class models.Class
-	err := r.db.QueryRow(query, id).Scan(
-		&class.ID,
-		&class.ClassName,
-		&class.IsActive,
-		&class.CreatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get class: %w", err)
-	}
-
-	return &class, nil
+	return r.getOne("SELECT "+classColumns+" FROM classes WHERE id = ?", id)
 }
 
-// GetByName gets class by name
-func (r *ClassRepository) GetByName(className string) (*models.Class, error) {
-	query := `
-		SELECT id, class_name, is_active, created_at
-		FROM classes
-		WHERE class_name = ?
-	`
-
-	var class models.Class
-	err := r.db.QueryRow(query, className).Scan(
-		&class.ID,
-		&class.ClassName,
-		&class.IsActive,
-		&class.CreatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get class: %w", err)
-	}
-
-	return &class, nil
+// GetByName gets class by name within a branch
+func (r *ClassRepository) GetByName(branchID int, className string) (*models.Class, error) {
+	return r.getOne("SELECT "+classColumns+" FROM classes WHERE branch_id = ? AND class_name = ?", branchID, className)
 }
 
-// Delete deletes a class by name
-func (r *ClassRepository) Delete(className string) error {
-	query := `DELETE FROM classes WHERE class_name = ?`
-	result, err := r.db.Exec(query, className)
-	if err != nil {
-		return fmt.Errorf("failed to delete class: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("class not found")
-	}
-
-	return nil
+// Delete deletes a class by name within a branch
+func (r *ClassRepository) Delete(branchID int, className string) error {
+	return r.execOne("DELETE FROM classes WHERE branch_id = ? AND class_name = ?", "delete class", branchID, className)
 }
 
 // DeleteByID deletes a class by ID
 func (r *ClassRepository) DeleteByID(id int) error {
-	query := `DELETE FROM classes WHERE id = ?`
-	result, err := r.db.Exec(query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete class: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("class not found")
-	}
-
-	return nil
+	return r.execOne("DELETE FROM classes WHERE id = ?", "delete class", id)
 }
 
 // ToggleActive toggles class active status
-func (r *ClassRepository) ToggleActive(className string) error {
-	query := `
+func (r *ClassRepository) ToggleActive(branchID int, className string) error {
+	return r.execOne(`
 		UPDATE classes
-		SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
-		WHERE class_name = ?
-	`
-	result, err := r.db.Exec(query, className)
-	if err != nil {
-		return fmt.Errorf("failed to toggle class status: %w", err)
-	}
+		SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP
+		WHERE branch_id = ? AND class_name = ?
+	`, "toggle class status", branchID, className)
+}
 
+func (r *ClassRepository) execOne(query, action string, args ...any) error {
+	result, err := r.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to %s: %w", action, err)
+	}
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-
 	if rows == 0 {
 		return fmt.Errorf("class not found")
 	}
-
 	return nil
 }
 
-// Count counts total classes
-func (r *ClassRepository) Count() (int, error) {
+// Count counts classes of a branch (branchID 0 = all branches)
+func (r *ClassRepository) Count(branchID int) (int, error) {
 	var count int
-	err := r.db.QueryRow("SELECT COUNT(*) FROM classes").Scan(&count)
+	err := r.db.QueryRow("SELECT COUNT(*) FROM classes WHERE (? = 0 OR branch_id = ?)", branchID, branchID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count classes: %w", err)
 	}
 	return count, nil
 }
 
-// Exists checks if a class name exists and is active
-func (r *ClassRepository) Exists(className string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM classes WHERE class_name = ? AND is_active = 1)`
+// Exists checks if an active class with this name exists in the branch
+func (r *ClassRepository) Exists(branchID int, className string) (bool, error) {
 	var exists bool
-	err := r.db.QueryRow(query, className).Scan(&exists)
+	err := r.db.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM classes WHERE branch_id = ? AND class_name = ? AND is_active = 1)",
+		branchID, className,
+	).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check class existence: %w", err)
 	}
 	return exists, nil
+}
+
+// BelongsToBranch reports whether the class exists and is in the given branch.
+func (r *ClassRepository) BelongsToBranch(classID, branchID int) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow("SELECT EXISTS(SELECT 1 FROM classes WHERE id = ? AND branch_id = ?)", classID, branchID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("failed to check class branch: %w", err)
+	}
+	return ok, nil
 }

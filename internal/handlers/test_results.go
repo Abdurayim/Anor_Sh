@@ -10,6 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"parent-bot/internal/models"
 	"parent-bot/internal/services"
+	"parent-bot/internal/utils"
 )
 
 // HandleTeacherEnterGradesCommand allows teacher to enter test results
@@ -21,7 +22,7 @@ func HandleTeacherEnterGradesCommand(botService *services.BotService, message *t
 	_ = botService.StateManager.Clear(telegramID)
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
 		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -113,8 +114,8 @@ func HandleTestResultInfo(botService *services.BotService, message *tgbotapi.Mes
 		teacherID = &teacher.ID
 	} else {
 		// Check if admin
-		admin, err := botService.AdminRepo.GetByTelegramID(telegramID)
-		if err != nil || admin == nil {
+		admin := botService.GetAdmin(telegramID)
+		if admin == nil {
 			text := "❌ Ruxsat yo'q / Нет разрешения"
 			return botService.TelegramService.SendMessage(chatID, text, nil)
 		}
@@ -268,9 +269,9 @@ func HandleTeacherViewClassGradesCommand(botService *services.BotService, messag
 	chatID := message.Chat.ID
 
 	// Get all classes (teachers can access all classes)
-	classes, err := botService.ClassRepo.GetAll()
+	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
 	if err != nil {
-		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка bazы danных"
+		text := "❌ Ma'lumotlar bazasida xatolik / Ошибка базы данных"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
@@ -347,10 +348,10 @@ func HandleViewClassGradesCallback(botService *services.BotService, callback *tg
 			}
 		}
 
-		text += "\n💡 Bahoni o'zgartirish uchun: /edit_grade <ID> <yangi_baho>\n"
-		text += "💡 Bahoni o'chirish uchun: /delete_grade <ID>\n\n"
-		text += "💡 Для изменения оценки: /edit_grade <ID> <новая_оценка>\n"
-		text += "💡 Для удаления оценки: /delete_grade <ID>"
+		text += "\n💡 Bahoni o'zgartirish uchun: /edit_grade &lt;ID&gt; &lt;yangi_baho&gt;\n"
+		text += "💡 Bahoni o'chirish uchun: /delete_grade &lt;ID&gt;\n\n"
+		text += "💡 Для изменения оценки: /edit_grade &lt;ID&gt; &lt;новая_оценка&gt;\n"
+		text += "💡 Для удаления оценки: /delete_grade &lt;ID&gt;"
 
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -432,9 +433,9 @@ func HandleEditGradeCommand(botService *services.BotService, message *tgbotapi.M
 	parts := strings.Fields(message.Text)
 	if len(parts) < 3 {
 		text := "❌ Noto'g'ri format.\n\n" +
-			"Format: /edit_grade <ID> <yangi_baho>\n\n" +
+			"Format: /edit_grade &lt;ID&gt; &lt;yangi_baho&gt;\n\n" +
 			"Misol: /edit_grade 123 5\n\n" +
-			"Формат: /edit_grade <ID> <новая_оценка>\n\n" +
+			"Формат: /edit_grade &lt;ID&gt; &lt;новая_оценка&gt;\n\n" +
 			"Пример: /edit_grade 123 5"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
@@ -447,10 +448,13 @@ func HandleEditGradeCommand(botService *services.BotService, message *tgbotapi.M
 	}
 
 	newScore := parts[2]
+	if len([]rune(newScore)) > 20 {
+		return botService.TelegramService.SendMessage(chatID, "❌ Baho juda uzun / Оценка слишком длинная", nil)
+	}
 
 	// Get test result
 	testResult, err := botService.TestResultService.GetTestResultByID(testResultID)
-	if err != nil || testResult == nil {
+	if err != nil || testResult == nil || !botService.StudentInBranch(testResult.StudentID, teacher.BranchID) {
 		text := "❌ Baho topilmadi / Оценка не найдена"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
@@ -471,7 +475,7 @@ func HandleEditGradeCommand(botService *services.BotService, message *tgbotapi.M
 			"ID: %d\n"+
 			"Yangi baho / Новая оценка: <b>%s</b>\n\n"+
 			"✅ Оценка успешно обновлена!",
-		testResultID, newScore,
+		testResultID, utils.EscapeHTML(newScore),
 	)
 
 	return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -494,9 +498,9 @@ func HandleDeleteGradeCommand(botService *services.BotService, message *tgbotapi
 	parts := strings.Fields(message.Text)
 	if len(parts) < 2 {
 		text := "❌ Noto'g'ri format.\n\n" +
-			"Format: /delete_grade <ID>\n\n" +
+			"Format: /delete_grade &lt;ID&gt;\n\n" +
 			"Misol: /delete_grade 123\n\n" +
-			"Формат: /delete_grade <ID>\n\n" +
+			"Формат: /delete_grade &lt;ID&gt;\n\n" +
 			"Пример: /delete_grade 123"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
@@ -510,7 +514,7 @@ func HandleDeleteGradeCommand(botService *services.BotService, message *tgbotapi
 
 	// Get test result to show what's being deleted
 	testResult, err := botService.TestResultService.GetTestResultByID(testResultID)
-	if err != nil || testResult == nil {
+	if err != nil || testResult == nil || !botService.StudentInBranch(testResult.StudentID, teacher.BranchID) {
 		text := "❌ Baho topilmadi / Оценка не найдена"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
