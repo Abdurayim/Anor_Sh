@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	_ "time/tzdata" // embed the time zone database: Asia/Tashkent must load even without the OS tzdata package
 
 	"github.com/gin-gonic/gin"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
