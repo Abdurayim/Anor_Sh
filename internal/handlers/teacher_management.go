@@ -19,16 +19,13 @@ func HandleAddTeacherCommand(botService *services.BotService, message *tgbotapi.
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	isAdmin := false
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+	phone := ""
 	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		phone = user.PhoneNumber
 	}
 
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -41,7 +38,7 @@ func HandleAddTeacherCommand(botService *services.BotService, message *tgbotapi.
 
 	// Set state
 	stateData := &models.StateData{}
-	err = botService.StateManager.Set(telegramID, "awaiting_teacher_full_name", stateData)
+	err := botService.StateManager.Set(telegramID, "awaiting_teacher_full_name", stateData)
 	if err != nil {
 		return err
 	}
@@ -139,7 +136,7 @@ func HandleTeacherPhone(botService *services.BotService, message *tgbotapi.Messa
 	}
 
 	// Get admin info
-	admin := botService.GetAdmin(telegramID)
+	admin := botService.GetLinkedAdmin(telegramID)
 	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		_ = botService.StateManager.Clear(telegramID)
@@ -184,16 +181,13 @@ func HandleListTeachersCommand(botService *services.BotService, message *tgbotap
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	isAdmin := false
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+	phone := ""
 	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		phone = user.PhoneNumber
 	}
 
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)

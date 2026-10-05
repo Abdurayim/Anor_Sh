@@ -18,21 +18,15 @@ func HandleAddStudentCommand(botService *services.BotService, message *tgbotapi.
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
 	var lang i18n.Language = i18n.LanguageUzbek
+	phone := ""
 	if user != nil {
 		lang = i18n.GetLanguage(user.Language)
+		phone = user.PhoneNumber
 	}
 
-	isAdmin := false
-	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
-	}
-
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -110,12 +104,9 @@ func HandleStudentInfo(botService *services.BotService, message *tgbotapi.Messag
 	}
 
 	// Get admin info
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
 
-	admin := botService.GetAdmin(telegramID)
+	admin := botService.GetLinkedAdmin(telegramID)
 	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -216,7 +207,7 @@ func HandleAdminStudentNameInput(botService *services.BotService, message *tgbot
 	}
 
 	// Get admin info
-	admin := botService.GetAdmin(telegramID)
+	admin := botService.GetLinkedAdmin(telegramID)
 	if admin == nil {
 		text := "❌ Admin ma'lumotlari topilmadi / Данные администратора не найдены"
 		_ = botService.StateManager.Clear(telegramID)
@@ -283,16 +274,13 @@ func HandleLinkStudentCommand(botService *services.BotService, message *tgbotapi
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	isAdmin := false
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+	phone := ""
 	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		phone = user.PhoneNumber
 	}
 
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -311,7 +299,7 @@ func HandleLinkStudentCommand(botService *services.BotService, message *tgbotapi
 
 	// Set state
 	stateData := &models.StateData{}
-	err = botService.StateManager.Set(telegramID, "awaiting_link_info", stateData)
+	err := botService.StateManager.Set(telegramID, "awaiting_link_info", stateData)
 	if err != nil {
 		return err
 	}
@@ -461,16 +449,13 @@ func HandleListStudentsCommand(botService *services.BotService, message *tgbotap
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	isAdmin := false
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+	phone := ""
 	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		phone = user.PhoneNumber
 	}
 
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -512,16 +497,13 @@ func HandleViewParentChildrenCommand(botService *services.BotService, message *t
 	chatID := message.Chat.ID
 
 	// Check if user is admin
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	isAdmin := false
+	user, _ := botService.UserService.GetUserByTelegramID(telegramID)
+	phone := ""
 	if user != nil {
-		isAdmin, _ = botService.IsAdmin(user.PhoneNumber, user.TelegramID)
+		phone = user.PhoneNumber
 	}
 
+	isAdmin, _ := botService.IsAdmin(phone, telegramID)
 	if !isAdmin {
 		text := "❌ Bu buyruq faqat administratorlar uchun / Эта команда только для администраторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -534,7 +516,7 @@ func HandleViewParentChildrenCommand(botService *services.BotService, message *t
 
 	// Set state
 	stateData := &models.StateData{}
-	err = botService.StateManager.Set(telegramID, "awaiting_parent_phone_for_view", stateData)
+	err := botService.StateManager.Set(telegramID, "awaiting_parent_phone_for_view", stateData)
 	if err != nil {
 		return err
 	}
