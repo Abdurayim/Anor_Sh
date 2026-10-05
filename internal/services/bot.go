@@ -270,10 +270,15 @@ func (s *BotService) getLinkedAdmin(telegramID int64) *models.Admin {
 	return admin
 }
 
-// IsAdmin reports whether the Telegram account is a linked, active branch admin.
+// GetLinkedAdmin returns any active admin (branch admin or super admin) linked to this Telegram account, or nil.
+func (s *BotService) GetLinkedAdmin(telegramID int64) *models.Admin {
+	return s.getLinkedAdmin(telegramID)
+}
+
+// IsAdmin reports whether the Telegram account is a linked, active admin (branch admin or super admin).
 // The phone number argument is ignored: phone numbers are not proof of identity.
 func (s *BotService) IsAdmin(_ string, telegramID int64) (bool, error) {
-	return s.GetAdmin(telegramID) != nil, nil
+	return s.getLinkedAdmin(telegramID) != nil, nil
 }
 
 // LinkAdminByContact links the Telegram account to an admin (branch or super) if the
