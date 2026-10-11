@@ -728,8 +728,7 @@ func HandleAttendanceFinish(botService *services.BotService, callback *tgbotapi.
 	// Return appropriate keyboard based on who finished attendance
 	var keyboard interface{}
 	if teacher != nil {
-		lang := i18n.GetLanguage(teacher.Language)
-		keyboard = utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard = teacherMenuKeyboard(teacher)
 	} else if admin != nil {
 		// Get admin's user record for language
 		user, _ := botService.UserService.GetUserByTelegramID(telegramID)

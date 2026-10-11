@@ -44,6 +44,9 @@ func RouteByState(botService *services.BotService, message *tgbotapi.Message, st
 	case models.StateAwaitingAdminPhone:
 		return HandleAdminLinkPhone(botService, message)
 
+	case models.StateAwaitingStaffContact:
+		return HandleStaffContact(botService, message)
+
 	case models.StateAwaitingClassName:
 		return HandleClassNameInput(botService, message)
 
@@ -498,6 +501,17 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 		return HandleAdminAddTeacherCallback(botService, callback)
 	}
 
+	// Admin teacher card and tutor role
+	if teacherID, ok := scan1(data, "admin_teacher_card_%d"); ok {
+		return HandleAdminTeacherCardCallback(botService, callback, teacherID)
+	}
+	if teacherID, ok := scan1(data, "admin_teacher_tutor_%d"); ok {
+		return HandleAdminTeacherRoleCallback(botService, callback, teacherID, models.TeacherRoleTutor)
+	}
+	if teacherID, ok := scan1(data, "admin_teacher_plain_%d"); ok {
+		return HandleAdminTeacherRoleCallback(botService, callback, teacherID, models.TeacherRoleTeacher)
+	}
+
 	// Admin delete teacher callback
 	if teacherID, ok := scan1(data, "admin_delete_teacher_confirm_%d"); ok {
 		return HandleAdminDeleteTeacherCallback(botService, callback, teacherID, true)
@@ -550,6 +564,11 @@ func HandleCallbackQuery(botService *services.BotService, callback *tgbotapi.Cal
 	// Teacher manage students back callback
 	if data == "teacher_manage_students_back" {
 		return HandleTeacherManageStudentsBackCallback(botService, callback)
+	}
+
+	// Teacher language callback
+	if data == "teacher_lang_uz" || data == "teacher_lang_ru" {
+		return HandleTeacherLanguageCallback(botService, callback)
 	}
 
 	// Teacher back to main callback

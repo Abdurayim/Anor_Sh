@@ -114,7 +114,8 @@ func HandlePhoneNumber(botService *services.BotService, message *tgbotapi.Messag
 			_ = botService.TeacherService.LinkTelegramID(validPhone, telegramID, stateData.Language)
 
 			text := i18n.Get(i18n.MsgTeacherRegistered, lang)
-			keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+			teacher.Language = string(lang)
+			keyboard := teacherMenuKeyboard(teacher)
 			return botService.TelegramService.SendMessage(chatID, text, keyboard)
 		}
 	}
@@ -172,6 +173,16 @@ func ensureParentBranch(botService *services.BotService, message *tgbotapi.Messa
 	}
 	if teacher, _ := botService.TeacherService.GetTeacherByTelegramID(message.From.ID); teacher != nil {
 		return false, nil
+	}
+	// Confirming a staff role comes first: a teacher or admin never needs a parent branch
+	if state, _ := botService.StateManager.Get(message.From.ID); state != nil && state.State == models.StateAwaitingStaffContact {
+		return false, nil
+	}
+	if message.IsCommand() {
+		command := message.Command()
+		if command == "role" || (command == "start" && pendingStaffRole(botService, user.PhoneNumber) != "") {
+			return false, nil
+		}
 	}
 
 	lang := i18n.GetLanguage(user.Language)

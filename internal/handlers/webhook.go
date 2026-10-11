@@ -192,6 +192,8 @@ func HandleCommand(botService *services.BotService, message *tgbotapi.Message) e
 		return HandleSuperAdminPanel(botService, message)
 	case "admin_link":
 		return HandleAdminLinkCommand(botService, message)
+	case "role":
+		return HandleRoleCommand(botService, message)
 	case "manage_classes":
 		return HandleManageClassesCommand(botService, message)
 	case "add_class":

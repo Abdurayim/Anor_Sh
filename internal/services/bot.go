@@ -176,7 +176,7 @@ func (s *BotService) InitializeAdmins() error {
 }
 
 // MaxAdminsPerBranch limits how many admins a branch can have.
-const MaxAdminsPerBranch = 3
+const MaxAdminsPerBranch = config.MaxAdminsPerBranch
 
 // AddBranchAdmin lets the super admin add an admin to a branch. The new admin links their
 // Telegram account by sharing their contact in the bot.

@@ -71,6 +71,7 @@ var incrementalMigrations = []string{
 	"008_fix_parent_children_view.sql",
 	"009_branches.sql",
 	"010_super_admin.sql",
+	"011_tutor_role.sql",
 }
 
 // Migrate brings the schema up to date. Applied versions are recorded in schema_migrations.

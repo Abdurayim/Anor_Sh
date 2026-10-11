@@ -37,4 +37,6 @@ type CreateTimetableRequest struct {
 	FileType          string `json:"file_type" validate:"required"`
 	MimeType          string `json:"mime_type"`
 	UploadedByAdminID *int   `json:"uploaded_by_admin_id"`
+	// Set instead of UploadedByAdminID when a tutor uploads the timetable
+	UploadedByTeacherID *int `json:"uploaded_by_teacher_id"`
 }

@@ -196,6 +196,7 @@ var uzbek = map[string]string{
 	BtnAddTestResult:     "📊 Test natijasi qo'shish",
 	BtnMarkAttendance:    "✅ Davomatni belgilash",
 	BtnViewClassStudents: "👥 Sinf o'quvchilari",
+	BtnChangeLanguage:    "🌐 Til / Язык",
 
 	// Parent buttons
 	BtnMyTestResults:        "📊 Mening natijalarim",

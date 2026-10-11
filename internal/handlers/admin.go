@@ -1105,46 +1105,30 @@ func HandleAdminProposalsCallback(botService *services.BotService, callback *tgb
 
 // HandleAdminViewTimetablesCallback handles admin view timetables callback
 func HandleAdminViewTimetablesCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
-	telegramID := callback.From.ID
-	chatID := callback.Message.Chat.ID
-
-	// Get user
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Check if user is admin
-	phoneNumber := ""
-	if user != nil {
-		phoneNumber = user.PhoneNumber
-	}
-
-	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
-	if err != nil {
-		return err
-	}
-
-	if !isAdmin {
+	actor := timetableActorOf(botService, callback.From.ID)
+	if actor == nil {
 		text := "❌ Bu buyruq faqat ma'murlar uchun / Эта команда только для администраторов"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
 		return nil
 	}
 
-	lang := i18n.LanguageUzbek
-	if user != nil {
-		lang = i18n.GetLanguage(user.Language)
-	}
+	// Answer callback
+	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 
+	return sendTimetableList(botService, callback.Message.Chat.ID, actor)
+}
+
+// sendTimetableList shows the timetables of the actor's branch with delete buttons
+func sendTimetableList(botService *services.BotService, chatID int64, actor *timetableActor) error {
 	// Get all timetables
-	timetables, err := botService.TimetableRepo.GetAll(adminBranchID(botService, callback.From.ID), 50, 0)
+	timetables, err := botService.TimetableRepo.GetAll(actor.branchID, 50, 0)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
 	// Get all classes for mapping
-	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, callback.From.ID))
+	classes, err := botService.ClassRepo.GetAll(actor.branchID)
 	if err != nil {
 		text := "❌ Xatolik / Ошибка: " + err.Error()
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -1156,15 +1140,11 @@ func HandleAdminViewTimetablesCallback(botService *services.BotService, callback
 		classMap[class.ID] = class.ClassName
 	}
 
-	// Answer callback
-	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
-
 	// Format timetables list
 	text := "📅 <b>Dars jadvallari / Расписания уроков</b>\n\n"
 
 	if len(timetables) == 0 {
-		text += "Hozircha dars jadvallari yo'q / Пока нет расписаний\n\n"
-		text += "Yangi dars jadvali yuklash uchun quyidagi tugmani bosing:"
+		text += "Hozircha dars jadvallari yo'q / Пока нет расписаний"
 	} else {
 		text += fmt.Sprintf("Jami / Всего: %d\n\n", len(timetables))
 
@@ -1184,13 +1164,13 @@ func HandleAdminViewTimetablesCallback(botService *services.BotService, callback
 	}
 
 	// Create keyboard with timetable management options
-	keyboard := makeTimetableManagementKeyboard(timetables, classMap, lang)
+	keyboard := makeTimetableManagementKeyboard(timetables, classMap, actor.lang, actor.backCallback)
 
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
 // makeTimetableManagementKeyboard creates keyboard for timetable management
-func makeTimetableManagementKeyboard(timetables []*models.Timetable, classMap map[int]string, lang i18n.Language) tgbotapi.InlineKeyboardMarkup {
+func makeTimetableManagementKeyboard(timetables []*models.Timetable, classMap map[int]string, lang i18n.Language, backCallback string) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Add timetable buttons with delete options (2 per row)
@@ -1229,7 +1209,7 @@ func makeTimetableManagementKeyboard(timetables []*models.Timetable, classMap ma
 	// Add back button
 	backBtn := tgbotapi.NewInlineKeyboardButtonData(
 		i18n.Get(i18n.BtnBack, lang),
-		"admin_back",
+		backCallback,
 	)
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{backBtn})
 
@@ -1238,27 +1218,10 @@ func makeTimetableManagementKeyboard(timetables []*models.Timetable, classMap ma
 
 // HandleTimetableDeleteCallback handles deleting a timetable
 func HandleTimetableDeleteCallback(botService *services.BotService, callback *tgbotapi.CallbackQuery) error {
-	telegramID := callback.From.ID
-
-	// Get user
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Check if user is admin
-	phoneNumber := ""
-	if user != nil {
-		phoneNumber = user.PhoneNumber
-	}
-
-	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
-	if err != nil {
-		return err
-	}
-
-	if !isAdmin {
-		text := "❌ Faqat ma'murlar uchun / Только для администраторов"
+	// Branch admins and tutors; the timetable's branch is checked in authorizeCallback
+	actor := timetableActorOf(botService, callback.From.ID)
+	if actor == nil {
+		text := "❌ Faqat ma'murlar va tyutorlar uchun / Только для администраторов и тьюторов"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
 		return nil
 	}
@@ -1268,8 +1231,7 @@ func HandleTimetableDeleteCallback(botService *services.BotService, callback *tg
 	fmt.Sscanf(callback.Data, "timetable_delete_%d", &timetableID)
 
 	// Delete timetable
-	err = botService.TimetableRepo.Delete(timetableID)
-	if err != nil {
+	if err := botService.TimetableRepo.Delete(timetableID); err != nil {
 		text := "❌ Xatolik / Ошибка"
 		_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, text)
 		return nil
@@ -1279,7 +1241,7 @@ func HandleTimetableDeleteCallback(botService *services.BotService, callback *tg
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "✅ Dars jadvali o'chirildi / Расписание удалено")
 
 	// Refresh the timetable management view
-	return HandleAdminViewTimetablesCallback(botService, callback)
+	return sendTimetableList(botService, callback.Message.Chat.ID, actor)
 }
 
 // HandleAdminManageTeachersCallback handles admin manage teachers callback
@@ -1304,14 +1266,15 @@ func HandleAdminManageTeachersCallback(botService *services.BotService, callback
 		text += "Yangi o'qituvchi qo'shish uchun quyidagi tugmani bosing:"
 	} else {
 		text += fmt.Sprintf("Jami: <b>%d</b> ta\n\n", len(teachers))
-		text += "🗑 O'chirish uchun o'qituvchini tanlang:\n"
-		text += "🗑 Выберите учителя для удаления:\n\n"
+		text += "⭐ — tyutor / тьютор\n\n"
+		text += "Boshqarish uchun o'qituvchini tanlang:\n"
+		text += "Выберите учителя для управления:\n\n"
 	}
 
 	// Create keyboard
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	// Add delete button for each teacher
+	// One button per teacher; it opens the teacher card (role, delete)
 	for _, t := range teachers {
 		status := "✅"
 		if !t.IsActive {
@@ -1319,13 +1282,16 @@ func HandleAdminManageTeachersCallback(botService *services.BotService, callback
 		} else if t.TelegramID == nil {
 			status = "⏳"
 		}
+		if t.IsTutor() {
+			status += "⭐"
+		}
 
-		btnText := fmt.Sprintf("🗑 %s %s %s (%s)", status, t.FirstName, t.LastName, t.PhoneNumber)
-		deleteBtn := tgbotapi.NewInlineKeyboardButtonData(
+		btnText := fmt.Sprintf("%s %s %s (%s)", status, t.FirstName, t.LastName, t.PhoneNumber)
+		cardBtn := tgbotapi.NewInlineKeyboardButtonData(
 			btnText,
-			fmt.Sprintf("admin_delete_teacher_%d", t.ID),
+			fmt.Sprintf("admin_teacher_card_%d", t.ID),
 		)
-		rows = append(rows, []tgbotapi.InlineKeyboardButton{deleteBtn})
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{cardBtn})
 	}
 
 	// Add teacher button

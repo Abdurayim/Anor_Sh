@@ -286,9 +286,38 @@ func MakeTeacherMainMenuKeyboard(lang i18n.Language) tgbotapi.ReplyKeyboardMarku
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnMarkAttendance, lang)),
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnAddTestResult, lang)),
 		),
-		// Row 3: Announcements
+		// Row 3: Announcements & language
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnPostAnnouncement, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnChangeLanguage, lang)),
+		),
+	)
+	keyboard.ResizeKeyboard = true
+	return keyboard
+}
+
+// MakeTutorMainMenuKeyboard creates the tutor main menu: the teacher menu plus timetables
+func MakeTutorMainMenuKeyboard(lang i18n.Language) tgbotapi.ReplyKeyboardMarkup {
+	keyboard := tgbotapi.NewReplyKeyboard(
+		// Row 1: Student Management
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnAddStudent, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewClassStudents, lang)),
+		),
+		// Row 2: Attendance & Test Results
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnMarkAttendance, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnAddTestResult, lang)),
+		),
+		// Row 3: Timetables
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnUploadTimetable, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnViewTimetables, lang)),
+		),
+		// Row 4: Announcements & language
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnPostAnnouncement, lang)),
+			tgbotapi.NewKeyboardButton(i18n.Get(i18n.BtnChangeLanguage, lang)),
 		),
 	)
 	keyboard.ResizeKeyboard = true

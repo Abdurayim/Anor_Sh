@@ -146,37 +146,19 @@ func HandleTimetableChildSelection(botService *services.BotService, callback *tg
 	return showTimetableForStudent(botService, chatID, studentID, lang)
 }
 
-// HandleUploadTimetableCommand initiates timetable upload (admin only)
+// HandleUploadTimetableCommand initiates timetable upload (branch admins and tutors)
 func HandleUploadTimetableCommand(botService *services.BotService, message *tgbotapi.Message) error {
-	telegramID := message.From.ID
 	chatID := message.Chat.ID
 
-	// Get user (may be nil for admin-only accounts)
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Check if user is admin (works with or without user registration)
-	phoneNumber := ""
-	if user != nil {
-		phoneNumber = user.PhoneNumber
-	}
-
-	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
-	if err != nil || !isAdmin {
-		text := "❌ Bu buyruq faqat ma'murlar uchun / Эта команда только для администраторов"
+	actor := timetableActorOf(botService, message.From.ID)
+	if actor == nil {
+		text := "❌ Bu buyruq faqat ma'murlar va tyutorlar uchun / Эта команда только для администраторов и тьюторов"
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
+	lang := actor.lang
 
-	// Determine language
-	lang := i18n.LanguageUzbek
-	if user != nil {
-		lang = i18n.GetLanguage(user.Language)
-	}
-
-	// Get all classes
-	classes, err := botService.ClassRepo.GetAll(adminBranchID(botService, message.From.ID))
+	// Get all classes of the branch
+	classes, err := botService.ClassRepo.GetAll(actor.branchID)
 	if err != nil {
 		text := i18n.Get(i18n.ErrDatabaseError, lang)
 		return botService.TelegramService.SendMessage(chatID, text, nil)
@@ -208,37 +190,18 @@ func HandleTimetableClassSelection(botService *services.BotService, callback *tg
 	telegramID := callback.From.ID
 	chatID := callback.Message.Chat.ID
 
-	// Get user (may be nil for admin-only accounts)
-	user, err := botService.UserService.GetUserByTelegramID(telegramID)
-	if err != nil {
-		return err
-	}
-
-	// Check if user is admin (works with or without user registration)
-	phoneNumber := ""
-	if user != nil {
-		phoneNumber = user.PhoneNumber
-	}
-
-	isAdmin, err := botService.IsAdmin(phoneNumber, telegramID)
-	if err != nil || !isAdmin {
+	actor := timetableActorOf(botService, telegramID)
+	if actor == nil {
 		return botService.TelegramService.AnswerCallbackQuery(callback.ID, "Access denied")
 	}
-
-	// Determine language
-	lang := i18n.LanguageUzbek
-	langStr := "uz"
-	if user != nil {
-		lang = i18n.GetLanguage(user.Language)
-		langStr = user.Language
-	}
+	lang := actor.lang
 
 	// Save class ID in state
 	stateData := &models.StateData{
-		Language: langStr,
+		Language: string(lang),
 		ClassID:  &classID,
 	}
-	err = botService.StateManager.Set(telegramID, models.StateAwaitingTimetableFile, stateData)
+	err := botService.StateManager.Set(telegramID, models.StateAwaitingTimetableFile, stateData)
 	if err != nil {
 		return err
 	}
@@ -281,14 +244,12 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	// Get admin record
-	admin := botService.GetAdmin(telegramID)
-
-	if admin == nil || stateData.ClassID == nil || !botService.ClassInBranch(*stateData.ClassID, admin.BranchID) {
+	// The uploader is a branch admin or a tutor, and the class must be in their branch
+	actor := timetableActorOf(botService, telegramID)
+	if actor == nil || stateData.ClassID == nil || !botService.ClassInBranch(*stateData.ClassID, actor.branchID) {
 		_ = botService.StateManager.Clear(telegramID)
 		return botService.TelegramService.SendMessage(chatID, msgNotAllowed, nil)
 	}
-	adminID := &admin.ID
 
 	// Create timetable record
 	timetableReq := &models.CreateTimetableRequest{
@@ -296,8 +257,9 @@ func HandleTimetableFileUpload(botService *services.BotService, message *tgbotap
 		TelegramFileID:    fileID,
 		Filename:          filename,
 		FileType:          fileType,
-		MimeType:          mimeType,
-		UploadedByAdminID: adminID,
+		MimeType:            mimeType,
+		UploadedByAdminID:   actor.adminID,
+		UploadedByTeacherID: actor.teacherID,
 	}
 
 	_, err := botService.TimetableService.CreateTimetable(timetableReq)

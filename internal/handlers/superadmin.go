@@ -189,6 +189,10 @@ func HandleSuperAdminAdminPhone(botService *services.BotService, message *tgbota
 		"Admin botga /start yuborib, raqamini <b>📱 tugma</b> orqali ulashsin — shundan keyin admin paneli ochiladi.\n\n"+
 		"✅ Админ филиала добавлен. Пусть он отправит боту /start и поделится номером <b>кнопкой 📱</b>.",
 		phone, utils.EscapeHTML(branchName))
+	if notifyPendingStaff(botService, phone, staffRoleAdmin) {
+		text += "\n\nℹ️ Bu raqam botda allaqachon ro'yxatdan o'tgan, unga xabar yuborildi.\n" +
+			"ℹ️ Этот номер уже зарегистрирован в боте, ему отправлено сообщение."
+	}
 	return botService.TelegramService.SendMessage(chatID, text, makeSuperAdminReplyKeyboard())
 }
 

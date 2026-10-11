@@ -17,7 +17,7 @@ func NewTeacherRepository(db *sql.DB) *TeacherRepository {
 }
 
 const teacherColumns = `t.id, t.phone_number, t.telegram_id, t.first_name, t.last_name, t.language,
-	t.is_active, COALESCE(t.branch_id, 0), t.added_by_admin_id, t.created_at`
+	t.is_active, COALESCE(t.branch_id, 0), t.role, t.added_by_admin_id, t.created_at`
 
 func scanTeacher(row interface{ Scan(...any) error }) (*models.Teacher, error) {
 	teacher := &models.Teacher{}
@@ -30,6 +30,7 @@ func scanTeacher(row interface{ Scan(...any) error }) (*models.Teacher, error) {
 		&teacher.Language,
 		&teacher.IsActive,
 		&teacher.BranchID,
+		&teacher.Role,
 		&teacher.AddedByAdminID,
 		&teacher.CreatedAt,
 	)
@@ -132,6 +133,12 @@ func (r *TeacherRepository) Update(id int, req *models.UpdateTeacherRequest) err
 		WHERE id = ?
 	`
 	_, err := r.db.Exec(query, req.FirstName, req.LastName, req.Language, req.IsActive, id)
+	return err
+}
+
+// SetRole changes the teacher's role (teacher or tutor)
+func (r *TeacherRepository) SetRole(id int, role string) error {
+	_, err := r.db.Exec("UPDATE teachers SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", role, id)
 	return err
 }
 

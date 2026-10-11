@@ -282,7 +282,22 @@ CGO_ENABLED=1 go build -o /opt/anor-bot/bin/parent-bot.new ./cmd/bot \
 journalctl -u anor-bot -n 30
 ```
 
-Yangi migratsiyalar qayta ishga tushganda avtomatik qo'llanadi.
+Yangi migratsiyalar qayta ishga tushganda avtomatik qo'llanadi. Har bir migratsiya bitta tranzaksiyada bajariladi: xato chiqsa, baza o'zgarmaydi va bot ishga tushmaydi (`journalctl` da sababi yoziladi).
+
+**Katta yangilanishdan oldin bazaning nusxasida sinab ko'ring** (jonli botga tegmaydi). `TEST_BOT_TOKEN` o'rniga @BotFather'dan olingan alohida sinov tokenini qo'ying:
+
+```bash
+sqlite3 /opt/anor-bot/data/parent_bot.db ".backup '/tmp/sinov.db'"
+cd /opt/anor-bot/src && CGO_ENABLED=1 go build -o /tmp/parent-bot-sinov ./cmd/bot
+cd /opt/anor-bot && BOT_TOKEN=TEST_BOT_TOKEN DB_PATH=/tmp/sinov.db WEBHOOK_URL= /tmp/parent-bot-sinov
+```
+
+`✓ Database schema is up to date` chiqsa, migratsiyalar jonli bazada ham o'tadi. `Ctrl+C` bilan to'xtating.
+
+**011 migratsiyasi (tyutor roli)** faqat ustun qo'shadi: `teachers.role` (hamma mavjud o'qituvchilar `teacher` bo'lib qoladi) va `timetables.uploaded_by_teacher_id`. Yangilanishdan keyin:
+
+- Tyutor: admin panel → O'qituvchilarni boshqarish → o'qituvchini tanlash → **⭐ Tyutor qilish**.
+- Avval ota-ona bo'lib ro'yxatdan o'tib qolgan o'qituvchi yoki admin botga `/start` yuboradi va raqamini **📱 tugma** bilan tasdiqlaydi — bazani qo'lda o'zgartirish kerak emas. Istalgan payt `/role` buyrug'i ham shu ishni qiladi.
 
 ## 13. Ko'p uchraydigan muammolar
 

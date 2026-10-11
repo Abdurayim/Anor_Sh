@@ -18,8 +18,8 @@ func NewTimetableRepository(db *sql.DB) *TimetableRepository {
 // Create creates a new timetable or updates existing one for the class
 func (r *TimetableRepository) Create(req *models.CreateTimetableRequest) (*models.Timetable, error) {
 	query := `
-		INSERT INTO timetables (class_id, telegram_file_id, filename, file_type, mime_type, uploaded_by_admin_id)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO timetables (class_id, telegram_file_id, filename, file_type, mime_type, uploaded_by_admin_id, uploaded_by_teacher_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		RETURNING id, class_id, telegram_file_id, filename, file_type, mime_type, uploaded_by_admin_id, created_at, updated_at
 	`
 
@@ -32,6 +32,7 @@ func (r *TimetableRepository) Create(req *models.CreateTimetableRequest) (*model
 		req.FileType,
 		req.MimeType,
 		req.UploadedByAdminID,
+		req.UploadedByTeacherID,
 	).Scan(
 		&timetable.ID,
 		&timetable.ClassID,

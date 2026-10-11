@@ -27,10 +27,13 @@ func HandleStart(botService *services.BotService, message *tgbotapi.Message) err
 		// Teacher interface - show teacher menu
 		lang := i18n.GetLanguage(teacher.Language)
 		text := "👨‍🏫 <b>O'qituvchi paneli / Панель учителя</b>\n\n"
+		if teacher.IsTutor() {
+			text = "⭐ <b>Tyutor paneli / Панель тьютора</b>\n\n"
+		}
 		text += "Assalomu aleykum! / Здравствуйте!\n\n"
 		text += i18n.Get(i18n.MsgMainMenu, lang)
 
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 
@@ -69,6 +72,12 @@ func HandleStart(botService *services.BotService, message *tgbotapi.Message) err
 
 	// PARENT INTERFACE - Registration required
 	if user != nil {
+		// Registered as a parent before being made a teacher or admin: the role is linked
+		// as soon as they confirm the number, nobody has to edit the database
+		if role := pendingStaffRole(botService, user.PhoneNumber); role != "" {
+			return promptStaffContact(botService, chatID, telegramID, role)
+		}
+
 		// Parent already registered, show parent menu
 		lang := i18n.GetLanguage(user.Language)
 		text := i18n.Get(i18n.MsgMainMenu, lang)
@@ -150,7 +159,7 @@ func HandleCancelCommand(botService *services.BotService, message *tgbotapi.Mess
 		} else {
 			text = "❌ Действие отменено."
 		}
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 

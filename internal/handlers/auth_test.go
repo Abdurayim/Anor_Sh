@@ -314,11 +314,13 @@ func TestSuperAdmin(t *testing.T) {
 	}
 
 	// Max admins per branch (Sergeli has 2 now)
-	if err := bs.AddBranchAdmin(super, "+998907000003", "x", 2); err != nil {
-		t.Fatal(err)
+	for i := 2; i < services.MaxAdminsPerBranch; i++ {
+		if err := bs.AddBranchAdmin(super, fmt.Sprintf("+9989071000%02d", i), "x", 2); err != nil {
+			t.Fatalf("admin %d of %d refused: %v", i+1, services.MaxAdminsPerBranch, err)
+		}
 	}
-	if err := bs.AddBranchAdmin(super, "+998907000004", "x", 2); err == nil {
-		t.Error("more than 3 admins per branch accepted")
+	if err := bs.AddBranchAdmin(super, "+998907100099", "x", 2); err == nil {
+		t.Errorf("more than %d admins per branch accepted", services.MaxAdminsPerBranch)
 	}
 
 	// Removing: .env admins cannot be removed in the bot, bot-added ones can

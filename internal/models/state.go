@@ -77,6 +77,8 @@ const (
 
 	// Admin states
 	StateAwaitingAdminPhone  = "awaiting_admin_phone"
+	// Someone confirms a staff role (admin/teacher) by sharing their own contact
+	StateAwaitingStaffContact = "awaiting_staff_contact"
 	StateAwaitingClassName   = "awaiting_class_name"
 
 	// Timetable states

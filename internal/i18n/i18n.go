@@ -180,6 +180,7 @@ const (
 	BtnAddTestResult          = "btn_add_test_result"
 	BtnMarkAttendance         = "btn_mark_attendance"
 	BtnViewClassStudents      = "btn_view_class_students"
+	BtnChangeLanguage         = "btn_change_language"
 
 	// Parent buttons
 	BtnMyTestResults          = "btn_my_test_results"

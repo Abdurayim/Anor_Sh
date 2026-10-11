@@ -39,6 +39,10 @@ const (
 	BranchSergeli = "sergeli"
 )
 
+// MaxAdminsPerBranch limits how many admins one branch can have, counting both the phones
+// configured in .env and the admins added by the super admin in the bot.
+const MaxAdminsPerBranch = 10
+
 // BranchCodes lists branches in display order.
 var BranchCodes = []string{BranchOlmazor, BranchSergeli}
 
@@ -131,8 +135,8 @@ func (c *Config) Validate() error {
 	seen := map[string]string{}
 	for _, code := range BranchCodes {
 		phones := c.Admin.BranchPhones[code]
-		if len(phones) > 3 {
-			return fmt.Errorf("maximum 3 admin phone numbers per branch allowed, %s has %d", code, len(phones))
+		if len(phones) > MaxAdminsPerBranch {
+			return fmt.Errorf("maximum %d admin phone numbers per branch allowed, %s has %d", MaxAdminsPerBranch, code, len(phones))
 		}
 		for _, p := range phones {
 			if other, ok := seen[p]; ok && other != code {

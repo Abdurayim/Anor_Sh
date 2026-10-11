@@ -59,7 +59,7 @@ func parentBranchID(botService *services.BotService, telegramID int64) int {
 // adminCommands are slash commands only admins may use.
 var adminCommands = map[string]bool{
 	"admin": true, "manage_classes": true, "add_class": true, "delete_class": true, "toggle_class": true,
-	"upload_timetable": true, "post_announcement": true, "add_student": true, "link_student": true,
+	"post_announcement": true, "add_student": true, "link_student": true,
 	"list_students": true, "view_parent_children": true, "add_teacher": true, "list_teachers": true,
 }
 
@@ -71,6 +71,9 @@ func authorizeCommand(botService *services.BotService, message *tgbotapi.Message
 	}
 	if adminCommands[command] {
 		return botService.GetAdmin(message.From.ID) != nil
+	}
+	if command == "upload_timetable" {
+		return timetableActorOf(botService, message.From.ID) != nil
 	}
 	if command == "edit_grade" || command == "delete_grade" {
 		return staffBranchID(botService, message.From.ID) != noBranch
@@ -105,9 +108,17 @@ func authorizeCallback(botService *services.BotService, callback *tgbotapi.Callb
 	case has("sa_"):
 		return botService.GetSuperAdmin(tgID) != nil
 
+	// ---------------- timetables: admin or tutor ----------------
+	case has("timetable_delete_"), has("timetable_select_"):
+		actor := timetableActorOf(botService, tgID)
+		if actor == nil {
+			return false
+		}
+		return adminObjectInBranch(botService, data, actor.branchID)
+
 	// ---------------- admin-only ----------------
-	case has("admin_"), has("class_delete_"), has("class_toggle_"), has("timetable_delete_"),
-		has("timetable_select_"), has("announcement_edit_"), has("announcement_delete_"),
+	case has("admin_"), has("class_delete_"), has("class_toggle_"),
+		has("announcement_edit_"), has("announcement_delete_"),
 		data == "announcement_skip_file", has("export_grades_"):
 		branchID := adminBranchID(botService, tgID)
 		if branchID == noBranch {
@@ -178,13 +189,12 @@ func adminObjectInBranch(botService *services.BotService, data string, branchID 
 			return botService.ClassInBranch(classID, branchID)
 		}
 	}
-	if teacherID, ok := scan1(data, "admin_delete_teacher_confirm_%d"); ok {
-		teacher, err := botService.TeacherRepo.GetByID(teacherID)
-		return err == nil && teacher.BranchID == branchID
-	}
-	if teacherID, ok := scan1(data, "admin_delete_teacher_%d"); ok {
-		teacher, err := botService.TeacherRepo.GetByID(teacherID)
-		return err == nil && teacher.BranchID == branchID
+	for _, format := range []string{"admin_delete_teacher_confirm_%d", "admin_delete_teacher_%d",
+		"admin_teacher_card_%d", "admin_teacher_tutor_%d", "admin_teacher_plain_%d"} {
+		if teacherID, ok := scan1(data, format); ok {
+			teacher, err := botService.TeacherRepo.GetByID(teacherID)
+			return err == nil && teacher.BranchID == branchID
+		}
 	}
 	if timetableID, ok := scan1(data, "timetable_delete_%d"); ok {
 		timetable, err := botService.TimetableService.GetTimetableByID(timetableID)

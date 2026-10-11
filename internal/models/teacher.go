@@ -12,9 +12,21 @@ type Teacher struct {
 	Language       string     `json:"language" db:"language"`
 	IsActive       bool       `json:"is_active" db:"is_active"`
 	BranchID       int        `json:"branch_id" db:"branch_id"`
+	Role           string     `json:"role" db:"role"`
 	AddedByAdminID *int       `json:"added_by_admin_id" db:"added_by_admin_id"`
 	RegisteredAt   *time.Time `json:"registered_at" db:"registered_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+}
+
+// Teacher roles: a tutor is a teacher who can also upload and delete timetables
+const (
+	TeacherRoleTeacher = "teacher"
+	TeacherRoleTutor   = "tutor"
+)
+
+// IsTutor reports whether the teacher has the tutor role
+func (t *Teacher) IsTutor() bool {
+	return t.Role == TeacherRoleTutor
 }
 
 // CreateTeacherRequest is the request to create a new teacher

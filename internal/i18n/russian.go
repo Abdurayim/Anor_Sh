@@ -196,6 +196,7 @@ var russian = map[string]string{
 	BtnAddTestResult:     "📊 Добавить результат теста",
 	BtnMarkAttendance:    "✅ Отметить посещаемость",
 	BtnViewClassStudents: "👥 Ученики класса",
+	BtnChangeLanguage:    "🌐 Til / Язык",
 
 	// Parent buttons
 	BtnMyTestResults:        "📊 Мои результаты",

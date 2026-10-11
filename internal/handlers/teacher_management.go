@@ -9,7 +9,6 @@ import (
 	"parent-bot/internal/i18n"
 	"parent-bot/internal/models"
 	"parent-bot/internal/services"
-	"parent-bot/internal/utils"
 	"parent-bot/internal/validator"
 )
 
@@ -172,7 +171,19 @@ func HandleTeacherPhone(botService *services.BotService, message *tgbotapi.Messa
 		teacherID, firstName, lastName, validPhone, language,
 	)
 
-	return botService.TelegramService.SendMessage(chatID, text, nil)
+	// Someone who already uses the bot as a parent only has to confirm the number on /start
+	if notifyPendingStaff(botService, validPhone, staffRoleTeacher) {
+		text += "\n\nℹ️ Bu raqam botda allaqachon ro'yxatdan o'tgan. Unga xabar yuborildi: /start bosib, raqamini tasdiqlasa, o'qituvchi menyusi ochiladi.\n" +
+			"ℹ️ Этот номер уже зарегистрирован в боте. Ему отправлено сообщение: после /start и подтверждения номера откроется меню учителя."
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"⭐ Tyutor qilish / Сделать тьютором", fmt.Sprintf("admin_teacher_tutor_%d", teacherID)),
+		),
+	)
+	return botService.TelegramService.SendMessage(chatID, text, &keyboard)
 }
 
 // HandleListTeachersCommand lists all teachers (admin only)
@@ -221,9 +232,11 @@ func HandleListTeachersCommand(botService *services.BotService, message *tgbotap
 
 		text += fmt.Sprintf("%d. %s <b>%s %s</b>\n"+
 			"   Tel: <code>%s</code> | ID: <code>%d</code>\n"+
+			"   %s\n"+
 			"   %s\n\n",
 			i+1, status, t.FirstName, t.LastName,
 			t.PhoneNumber, t.ID,
+			teacherRoleLabel(t.Role),
 			registered)
 	}
 
@@ -259,9 +272,8 @@ func HandleTeacherRegistration(botService *services.BotService, message *tgbotap
 
 	// Check if already registered
 	if teacher.TelegramID != nil && *teacher.TelegramID == telegramID {
-		lang := i18n.GetLanguage(teacher.Language)
 		text := "✅ Siz allaqachon ro'yxatdan o'tgansiz!\n\n✅ Вы уже зарегистрированы!"
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 
@@ -277,7 +289,6 @@ func HandleTeacherRegistration(botService *services.BotService, message *tgbotap
 	_ = botService.StateManager.Clear(telegramID)
 
 	// Success message
-	lang := i18n.GetLanguage(teacher.Language)
 	text := fmt.Sprintf(
 		"✅ <b>Ro'yxatdan o'tish muvaffaqiyatli yakunlandi!</b>\n\n"+
 			"Xush kelibsiz, <b>%s %s</b>!\n"+
@@ -289,7 +300,7 @@ func HandleTeacherRegistration(botService *services.BotService, message *tgbotap
 		teacher.FirstName, teacher.LastName,
 	)
 
-	keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+	keyboard := teacherMenuKeyboard(teacher)
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
@@ -298,7 +309,6 @@ func HandleTeacherRegistration(botService *services.BotService, message *tgbotap
 func HandleTeacherMessage(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Check if it's a command (already handled by HandleCommand in webhook)
 	if message.IsCommand() {
@@ -319,7 +329,7 @@ func HandleTeacherMessage(botService *services.BotService, message *tgbotapi.Mes
 		log.Printf("[TEACHER] Error getting state for %d: %v", telegramID, err)
 		// Clear any bad state and show teacher menu
 		_ = botService.StateManager.Clear(telegramID)
-		return showTeacherMainMenu(botService, chatID, lang)
+		return showTeacherMainMenu(botService, chatID, teacher)
 	}
 
 	// If teacher has a state, route by teacher-specific state handler
@@ -328,7 +338,7 @@ func HandleTeacherMessage(botService *services.BotService, message *tgbotapi.Mes
 		if err != nil {
 			log.Printf("[TEACHER] Error getting state data for %d: %v", telegramID, err)
 			_ = botService.StateManager.Clear(telegramID)
-			return showTeacherMainMenu(botService, chatID, lang)
+			return showTeacherMainMenu(botService, chatID, teacher)
 		}
 
 		// Route ONLY teacher states - never fall through to parent states
@@ -353,6 +363,13 @@ func isTeacherMenuButton(buttonText string) bool {
 		i18n.Get(i18n.BtnAddTestResult, i18n.LanguageRussian),
 		i18n.Get(i18n.BtnPostAnnouncement, i18n.LanguageUzbek),
 		i18n.Get(i18n.BtnPostAnnouncement, i18n.LanguageRussian),
+		i18n.Get(i18n.BtnChangeLanguage, i18n.LanguageUzbek),
+		i18n.Get(i18n.BtnChangeLanguage, i18n.LanguageRussian),
+		// Tutor only
+		i18n.Get(i18n.BtnUploadTimetable, i18n.LanguageUzbek),
+		i18n.Get(i18n.BtnUploadTimetable, i18n.LanguageRussian),
+		i18n.Get(i18n.BtnViewTimetables, i18n.LanguageUzbek),
+		i18n.Get(i18n.BtnViewTimetables, i18n.LanguageRussian),
 	}
 
 	for _, btn := range teacherButtons {
@@ -392,6 +409,13 @@ func routeTeacherState(botService *services.BotService, message *tgbotapi.Messag
 	case "teacher_awaiting_test_results_text":
 		return HandleTeacherTestResultsTextInput(botService, message, stateData)
 
+	case models.StateAwaitingTimetableFile:
+		// Tutor uploading a timetable; the handler re-checks the tutor role
+		return HandleTimetableFileUpload(botService, message, stateData)
+
+	case models.StateAwaitingStaffContact:
+		return HandleStaffContact(botService, message)
+
 	default:
 		// Unknown or stale state (like 'registered' from parent flow) - clear it and PROCESS the button
 		log.Printf("[TEACHER] Unknown state '%s' for teacher %d, clearing and processing button press", state, telegramID)
@@ -402,9 +426,9 @@ func routeTeacherState(botService *services.BotService, message *tgbotapi.Messag
 }
 
 // showTeacherMainMenu displays the teacher main menu with keyboard
-func showTeacherMainMenu(botService *services.BotService, chatID int64, lang i18n.Language) error {
+func showTeacherMainMenu(botService *services.BotService, chatID int64, teacher *models.Teacher) error {
 	text := "👨‍🏫 Bosh menyu / Главное меню"
-	keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+	keyboard := teacherMenuKeyboard(teacher)
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
@@ -412,7 +436,6 @@ func showTeacherMainMenu(botService *services.BotService, chatID int64, lang i18
 func HandleTeacherMainMenu(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	buttonText := message.Text
 	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Add student
 	if buttonText == i18n.Get(i18n.BtnAddStudent, i18n.LanguageUzbek) ||
@@ -444,9 +467,29 @@ func HandleTeacherMainMenu(botService *services.BotService, message *tgbotapi.Me
 		return HandleTeacherPostAnnouncementCommand(botService, message, teacher)
 	}
 
+	// Change language
+	if buttonText == i18n.Get(i18n.BtnChangeLanguage, i18n.LanguageUzbek) ||
+		buttonText == i18n.Get(i18n.BtnChangeLanguage, i18n.LanguageRussian) {
+		return HandleTeacherLanguageCommand(botService, message)
+	}
+
+	// Timetables (tutor only; a plain teacher falls through to the main menu)
+	if teacher.IsTutor() {
+		if buttonText == i18n.Get(i18n.BtnUploadTimetable, i18n.LanguageUzbek) ||
+			buttonText == i18n.Get(i18n.BtnUploadTimetable, i18n.LanguageRussian) {
+			return HandleUploadTimetableCommand(botService, message)
+		}
+		if buttonText == i18n.Get(i18n.BtnViewTimetables, i18n.LanguageUzbek) ||
+			buttonText == i18n.Get(i18n.BtnViewTimetables, i18n.LanguageRussian) {
+			if actor := timetableActorOf(botService, message.From.ID); actor != nil {
+				return sendTimetableList(botService, chatID, actor)
+			}
+		}
+	}
+
 	// Default: show main menu
 	text := "👨‍🏫 Bosh menyu / Главное меню"
-	keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+	keyboard := teacherMenuKeyboard(teacher)
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
@@ -463,7 +506,6 @@ func IsTeacher(botService *services.BotService, telegramID int64) (*models.Teach
 func HandleTeacherManageStudentsCommand(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	chatID := message.Chat.ID
 	telegramID := message.From.ID
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get all classes (teachers can access all classes)
 	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
@@ -475,7 +517,7 @@ func HandleTeacherManageStudentsCommand(botService *services.BotService, message
 	if len(classes) == 0 {
 		text := "📚 Hozircha sinflar yo'q. Admin sinf qo'shishi kerak.\n\n" +
 			"📚 Пока нет классов. Администратор должен добавить классы."
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 
@@ -673,14 +715,13 @@ func HandleTeacherStudentNameInput(botService *services.BotService, message *tgb
 		return botService.TelegramService.SendMessage(chatID, text, nil)
 	}
 
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Validate state data
 	if stateData.ClassID == nil {
 		text := "❌ Sessiya tugagan. Iltimos, qaytadan boshlang.\n\n" +
 			"❌ Сессия истекла. Пожалуйста, начните заново."
 		_ = botService.StateManager.Clear(telegramID)
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, &keyboard)
 	}
 
@@ -879,7 +920,6 @@ func HandleTeacherBackToMainCallback(botService *services.BotService, callback *
 		return nil
 	}
 
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Delete previous message
 	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
@@ -887,7 +927,7 @@ func HandleTeacherBackToMainCallback(botService *services.BotService, callback *
 
 	// Send main menu
 	text := "👨‍🏫 Bosh menyu / Главное меню"
-	keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+	keyboard := teacherMenuKeyboard(teacher)
 
 	_ = botService.TelegramService.AnswerCallbackQuery(callback.ID, "")
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
@@ -900,7 +940,6 @@ func HandleTeacherBackToMainCallback(botService *services.BotService, callback *
 func HandleTeacherPostAnnouncementCommand(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	telegramID := message.From.ID
 	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get all classes (teachers can access all classes)
 	classes, err := botService.ClassRepo.GetAll(teacher.BranchID)
@@ -912,7 +951,7 @@ func HandleTeacherPostAnnouncementCommand(botService *services.BotService, messa
 	if len(classes) == 0 {
 		text := "📚 Hozircha sinflar yo'q. Admin sinf qo'shishi kerak.\n\n" +
 			"📚 Пока нет классов. Администратор должен добавить классы."
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 
@@ -970,7 +1009,6 @@ func HandleTeacherPostAnnouncementCommand(botService *services.BotService, messa
 // HandleTeacherMyAnnouncementsCommand shows teacher's announcements
 func HandleTeacherMyAnnouncementsCommand(botService *services.BotService, message *tgbotapi.Message, teacher *models.Teacher) error {
 	chatID := message.Chat.ID
-	lang := i18n.GetLanguage(teacher.Language)
 
 	// Get teacher's announcements
 	announcements, err := botService.AnnouncementRepo.GetByTeacherID(teacher.ID, 100, 0)
@@ -981,7 +1019,7 @@ func HandleTeacherMyAnnouncementsCommand(botService *services.BotService, messag
 
 	if len(announcements) == 0 {
 		text := "📊 Sizda hali e'lonlar yo'q.\n\n📊 У вас еще нет объявлений."
-		keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+		keyboard := teacherMenuKeyboard(teacher)
 		return botService.TelegramService.SendMessage(chatID, text, keyboard)
 	}
 
@@ -1064,8 +1102,7 @@ func HandleTeacherSettingsCommand(botService *services.BotService, message *tgbo
 		teacher.FirstName, teacher.LastName, teacher.PhoneNumber, teacher.Language,
 	)
 
-	lang := i18n.GetLanguage(teacher.Language)
-	keyboard := utils.MakeTeacherMainMenuKeyboard(lang)
+	keyboard := teacherMenuKeyboard(teacher)
 	return botService.TelegramService.SendMessage(chatID, text, keyboard)
 }
 
